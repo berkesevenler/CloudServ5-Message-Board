@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>University Message Board</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="blog-body">
+    <nav class="top-nav">
+        <div class="nav-content">
+            
+            <div class="logo1">MessageBoard</div>
+            
+            <p id="user-display" class="user-info"></p>
+            <button onclick="logout()" class="logout-btn">Logout</button>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <div class="create-post-section">
+            <h2>Create a Post</h2>
+            <div class="post-form">
+                <textarea id="content" placeholder="What's on your mind?"></textarea>
+                <div class="file-upload-container">
+                    <input type="file" id="file-upload" accept="*/*" style="display: none;" onchange="handleFileSelect()">
+                    <button type="button" onclick="document.getElementById('file-upload').click()" class="upload-btn">Upload File</button>
+                    <div id="file-preview" class="file-preview"></div>
+                </div>
+                <button onclick="createPost()" class="post-btn">Post</button>
+            </div>
+        </div>
+
+        <div class="posts-container" id="posts">
+        </div>
+    </div>
+    <script src="scripts.js"></script>
+</body>
+</html>
+
