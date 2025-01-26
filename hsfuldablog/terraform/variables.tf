@@ -1,7 +1,3 @@
-variable "group_number" {
-  type    = string
-  default = "5"
-}
 
 variable "auth_url" {
   type    = string

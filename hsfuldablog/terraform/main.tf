@@ -4,7 +4,8 @@ variable "group_number" {
   default = "5"
 }
 
-# Define OpenStack credentials, project config etc.
+# Commenting out the locals block for future reference
+
 locals {
   auth_url          = var.auth_url
   user_name         = var.user_name
@@ -21,16 +22,26 @@ locals {
   flavor_name       = var.flavor_name
 }
 
+
+terraform {
+  required_providers {
+    openstack = {
+      source  = "terraform-provider-openstack/openstack"
+      version = ">= 1.46.0"
+    }
+  }
+}
+
 # Configure the OpenStack Provider
 provider "openstack" {
-  auth_url    = var.auth_url
-  username    = var.user_name
-  password    = var.user_password
-  tenant_name = var.tenant_name
-  tenant_id   = var.project_id
+  auth_url          = var.auth_url
+  user_name          = var.user_name
+  password          = var.user_password
+  tenant_name       = var.tenant_name
+  tenant_id         = var.project_id
   user_domain_name  = var.user_domain_name
-  region      = var.region_name
-  cacert_file = var.cacert_file
+  region            = var.region_name
+  cacert_file       = var.cacert_file
 }
 
 # Reference existing keypair
@@ -38,11 +49,31 @@ data "openstack_compute_keypair_v2" "terraform-keypair" {
   name = var.key_pair
 }
 
+# Declare the security group
+resource "openstack_networking_secgroup_v2" "terraform-secgroup" {
+  name        = "terraform-secgroup"
+  description = "Security group for Terraform instances"
+}
+
+# Declare the networking resources
+resource "openstack_networking_network_v2" "terraform-network-1" {
+  name           = "my-terraform-network-1"
+  admin_state_up = true
+}
+
+resource "openstack_networking_subnet_v2" "terraform-subnet-1" {
+  name            = "my-terraform-subnet-1"
+  network_id      = openstack_networking_network_v2.terraform-network-1.id
+  cidr            = "192.168.255.0/24" // Adjust CIDR as needed
+  ip_version      = 4
+  dns_nameservers = var.dns_servers
+}
+
 # Create instances
 resource "openstack_compute_instance_v2" "terraform-instance-1" {
   name              = "my-terraform-instance-1"
-  image_name        = local.image_name
-  flavor_name       = local.flavor_name
+  image_name        = var.image_name
+  flavor_name       = var.flavor_name
   key_pair          = data.openstack_compute_keypair_v2.terraform-keypair.name
   security_groups   = [openstack_networking_secgroup_v2.terraform-secgroup.name]
 
@@ -73,8 +104,8 @@ resource "openstack_compute_instance_v2" "terraform-instance-1" {
 
 resource "openstack_compute_instance_v2" "terraform-instance-2" {
   name            = "my-terraform-instance-2"
-  image_name      = local.image_name
-  flavor_name     = local.flavor_name
+  image_name      = var.image_name
+  flavor_name     = var.flavor_name
   key_pair        = data.openstack_compute_keypair_v2.terraform-keypair.name
   security_groups = [openstack_networking_secgroup_v2.terraform-secgroup.name]
 
@@ -138,7 +169,7 @@ resource "openstack_lb_members_v2" "members_1" {
 # Create Docker instance
 resource "openstack_compute_instance_v2" "docker_instance" {
   name            = "docker-instance"
-  image_name      = var.docker_image_name
+  image_name      = "ubuntu-22.04-jammy-server-cloud-image-amd64"
   flavor_name     = var.docker_flavor_name
   key_pair        = var.key_pair
   security_groups = [openstack_networking_secgroup_v2.docker_secgroup.name]
@@ -158,18 +189,18 @@ resource "openstack_compute_instance_v2" "docker_instance" {
     systemctl enable docker
 
     # Clone the GitHub repository
-    git clone https://github.com/your-username/message-board.git /message-board
+    git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/CloudServ5-Message-Board
 
     # Navigate to the cloned directory
-    cd /message-board
+    cd /tmp/CloudServ5-Message-Board
 
     # Build the Docker image
     docker build -t message-board-app .
 
     # Optionally, push the image to Docker Hub
-    docker login -u "your-dockerhub-username" -p "your-dockerhub-password"
-    docker tag message-board-app your-dockerhub-username/message-board-app:latest
-    docker push your-dockerhub-username/message-board-app:latest
+    docker login -u "your-dockerhub-username" -p "your-dockerhub-password" // Fill in your Docker Hub credentials
+    docker tag message-board-app your-dockerhub-username/message-board-app:latest // Fill in your Docker Hub username
+    docker push your-dockerhub-username/message-board-app:latest // Fill in your Docker Hub username
 
     # Run the container
     docker run -d -p 80:80 --name message-board message-board-app
@@ -220,4 +251,20 @@ output "instance_ip" {
 # Output manually assigned floating IP
 output "loadbalancer_vip_addr" {
   value = "10.32.6.117"
+}
+
+# Clone the GitHub repository
+resource "null_resource" "clone_repo" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      if [ -d "/tmp/CloudServ5-Message-Board" ]; then
+        rm -rf /tmp/CloudServ5-Message-Board
+      fi
+      git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/CloudServ5-Message-Board
+    EOT
+  }
+
+  triggers = {
+    always_run = "${timestamp()}" // This will force the clone command to run every time you apply
+  }
 }
