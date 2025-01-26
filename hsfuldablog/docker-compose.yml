@@ -14,22 +14,10 @@ services:
   backend:
     build:
       context: ./backend
-    ports: []  # Do not expose backend to host
+    ports:
+      - "5001:5001"  # Expose backend on port 5000 for debugging
     environment:
-      DATABASE_URL: "postgresql://admin:admin123@database:5432/message_board"
-    depends_on:
-      - database
-    networks:
-      - app-network
-
-  database:
-    build:
-      context: ./database
-    ports: []  # Do not expose database to host
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: message_board
+      MONGO_URI: "mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority"
     networks:
       - app-network
 

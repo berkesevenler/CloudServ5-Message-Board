@@ -1,3 +1,9 @@
+// Initialize API_BASE_URL properly
+const API_BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:5001'  // Use localhost for development
+    : 'http://backend:5001';   // Use backend service in Docker
+
+
 window.onload = function () {
     if (window.location.pathname.includes('blog.html')) {
         const username = getUsername();
@@ -17,10 +23,18 @@ function getUsername() {
 
 async function fetchPosts() {
     try {
-        const response = await fetch('http://backend:5000/posts');
+        const response = await fetch(`${API_BASE_URL}/posts`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
         const posts = await response.json();
         const postsList = document.getElementById('posts');
         postsList.innerHTML = '';
+
+        if (posts.length === 0) {
+            postsList.innerHTML = '<p>No posts available. Be the first to create one!</p>';
+            return;
+        }
 
         posts.forEach(post => {
             const postElement = document.createElement('div');
@@ -36,13 +50,19 @@ async function fetchPosts() {
         });
     } catch (error) {
         console.error('Error fetching posts:', error);
-        alert('Failed to load posts. Please try again later.');
+        alert(`Failed to fetch posts: ${error.message || 'Unknown error'}`);
     }
 }
 
 async function createPost() {
     const content = document.getElementById('content').value;
-    const username = localStorage.getItem('username');
+    const username = getUsername();
+
+    if (!username) {
+        alert('No username found. Please log in again.');
+        window.location.href = "index.html";
+        return;
+    }
 
     if (!content.trim()) {
         alert('Please enter some content!');
@@ -55,35 +75,28 @@ async function createPost() {
     };
 
     try {
-        const response = await fetch('http://backend:5000/posts', {
+        const response = await fetch(`${API_BASE_URL}/posts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newPost)
         });
 
         if (response.ok) {
-            fetchPosts();
+            await fetchPosts();
             document.getElementById('content').value = '';
         } else {
-            alert('Failed to create post. Please try again.');
+            const errorData = await response.json();
+            alert(`Failed to create post: ${errorData.error || 'Unknown error'}`);
         }
     } catch (error) {
         console.error('Error creating post:', error);
-        alert('Failed to create post. Please try again.');
+        alert(`Failed to create post: ${error.message || 'Unknown error'}`);
     }
 }
 
 function formatTime(timestamp) {
-    const now = Date.now();
-    const diff = now - timestamp;
-
-    const hours = Math.floor(diff / (60 * 60 * 1000));
-    if (hours > 0) {
-        return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    }
-
-    const minutes = Math.floor(diff / (60 * 1000));
-    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    const date = new Date(timestamp);
+    return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function logout() {

@@ -1,40 +1,48 @@
 from flask import Flask, jsonify, request
-import psycopg2
+from flask_cors import CORS
+from pymongo import MongoClient
+import datetime
+import os
 
 app = Flask(__name__)
 
-# Database connection
-def get_db_connection():
-    conn = psycopg2.connect(
-        dbname="message_board",
-        user="admin",
-        password="admin123",
-        host="database"  # The hostname matches the Docker service name for the database
-    )
-    return conn
+# Enable CORS for the frontend's origin
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# MongoDB connection
+mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/messageboard")
+client = MongoClient(mongo_uri)
+db = client.get_database()
+posts_collection = db.posts
 
 @app.route('/posts', methods=['GET', 'POST'])
 def posts():
-    conn = get_db_connection()
-    cur = conn.cursor()
-
     if request.method == 'GET':
-        cur.execute('SELECT * FROM posts')
-        posts = cur.fetchall()
-        cur.close()
-        conn.close()
+        posts = []
+        for post in posts_collection.find():
+            posts.append({
+                "id": str(post["_id"]),
+                "user": post["user"],
+                "content": post["content"],
+                "timestamp": post["timestamp"]
+            })
         return jsonify(posts)
 
     if request.method == 'POST':
-        new_post = request.json
-        cur.execute(
-            'INSERT INTO posts (user, content) VALUES (%s, %s)',
-            (new_post['user'], new_post['content'])
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({'message': 'Post created!'}), 201
+        data = request.get_json()
+        user = data.get('user')
+        content = data.get('content')
+
+        if not user or not content:
+            return jsonify({'error': 'Missing user or content'}), 400
+
+        post = {
+            "user": user,
+            "content": content,
+            "timestamp": datetime.datetime.utcnow()
+        }
+        result = posts_collection.insert_one(post)
+        return jsonify({'message': 'Post created!', 'id': str(result.inserted_id)}), 201
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5001)
