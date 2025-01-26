@@ -4,9 +4,8 @@ const API_BASE_URL = window.location.hostname === 'localhost'
     : 'http://backend:5001';   // Use backend service in Docker
 
 window.onload = function () {
-    if (window.location.pathname.includes('index.html')) {
-        fetchPosts();
-    }
+    // Fetch posts when the website loads
+    fetchPosts();
 };
 
 async function fetchPosts() {
@@ -15,6 +14,11 @@ async function fetchPosts() {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch posts');
+        }
+
         const posts = await response.json();
         const postsList = document.getElementById('posts');
         postsList.innerHTML = '';
@@ -23,6 +27,9 @@ async function fetchPosts() {
             postsList.innerHTML = '<p>No posts available. Be the first to create one!</p>';
             return;
         }
+
+        // Reverse the posts array to display newest posts first
+        posts.reverse();
 
         posts.forEach(post => {
             const postElement = document.createElement('div');
@@ -38,7 +45,8 @@ async function fetchPosts() {
         });
     } catch (error) {
         console.error('Error fetching posts:', error);
-        alert(`Failed to fetch posts: ${error.message || 'Unknown error'}`);
+        const postsList = document.getElementById('posts');
+        postsList.innerHTML = `<p>Failed to fetch posts: ${error.message || 'Unknown error'}</p>`;
     }
 }
 
@@ -69,7 +77,7 @@ async function createPost() {
         });
 
         if (response.ok) {
-            await fetchPosts();
+            await fetchPosts(); // Refresh posts after creating a new one
             document.getElementById('content').value = ''; // Clear content input after posting
             document.getElementById('username').value = ''; // Clear username input after posting
         } else {
