@@ -1,0 +1,37 @@
+version: '3.9'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"  # Expose the frontend to the host on port 8080
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+    ports: []  # Do not expose backend to host
+    environment:
+      DATABASE_URL: "postgresql://admin:admin123@database:5432/message_board"
+    depends_on:
+      - database
+    networks:
+      - app-network
+
+  database:
+    build:
+      context: ./database
+    ports: []  # Do not expose database to host
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: message_board
+    networks:
+      - app-network
+
+networks:
+  app-network:
