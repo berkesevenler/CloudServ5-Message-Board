@@ -3,60 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome | University Message Board</title>
+    <title>University Message Board</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
-<body class="greeting-body">
-    <div class="welcome-container">
-        <div class="welcome-card">
-            <div class="logo">
-                <img src="../csm_01_Blatt_RGB-300_2e46d80bf8.jpg.webp" alt="Logo" style="width: 50%; height: auto;">
-            </div>
-            <h1>Message Board</h1>
-            <h3>Welcome Back</h3>
-            <p class="subtitle">Enter your credentials to continue</p>
+<body class="blog-body">
+    <nav class="top-nav">
+        <div class="nav-content">
             
-            <div class="input-group">
-                <input type="text" id="username-input" placeholder="Username">
-                <input type="password" id="password-input" placeholder="Password">
-                <button onclick="checkCredentials()" class="login-btn">Enter</button>
-            </div>
+            <div class="logo1">MessageBoard</div>
             
-            <p class="info-text">New user? Your account will be created automatically.</p>
+            <p id="user-display" class="user-info"></p>
+            <button onclick="logout()" class="logout-btn">Logout</button>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <div class="create-post-section">
+            <h2>Create a Post</h2>
+            <div class="post-form">
+                <input type="text" id="username" placeholder="Enter a username" />
+                <textarea id="content" placeholder="What's on your mind?"></textarea>
+                <div class="file-upload-container">
+                    <input type="file" id="file-upload" accept="*/*" style="display: none;" onchange="handleFileSelect()">
+                    <button type="button" onclick="document.getElementById('file-upload').click()" class="upload-btn">Upload File</button>
+                    <div id="file-preview" class="file-preview"></div>
+                </div>
+                <button onclick="createPost()" class="post-btn">Post</button>
+            </div>
+        </div>
+
+        <div class="posts-container" id="posts">
         </div>
     </div>
-    <script>
-        window.onload = function() {
-           
-        }
-
-        function checkCredentials() {
-            const username = document.getElementById('username-input').value.trim();
-            const password = document.getElementById('password-input').value.trim();
-
-            if (!username || !password) {
-                alert('Please enter both username and password!');
-                return;
-            }
-
-            const existingPassword = localStorage.getItem(`password_${username}`);
-            
-            if (existingPassword) {
-                if (password === existingPassword) {
-                    localStorage.setItem('username', username);
-                    window.location.href = "blog.html";
-                } else {
-                    alert('Incorrect password for this username!');
-                }
-            } else {
-                localStorage.setItem('username', username);
-                localStorage.setItem(`password_${username}`, password);
-                window.location.href = "blog.html";
-            }
-        }
-
-    </script>
     <script src="scripts.js"></script>
 </body>
 </html>
+

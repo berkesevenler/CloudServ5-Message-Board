@@ -3,23 +3,11 @@ const API_BASE_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:5001'  // Use localhost for development
     : 'http://backend:5001';   // Use backend service in Docker
 
-
 window.onload = function () {
-    if (window.location.pathname.includes('blog.html')) {
-        const username = getUsername();
-        if (username) {
-            document.getElementById('user-display').textContent = `Logged in as: ${username}`;
-        } else {
-            alert('No username found. Redirecting to welcome page.');
-            window.location.href = "index.html";
-        }
+    if (window.location.pathname.includes('index.html')) {
         fetchPosts();
     }
 };
-
-function getUsername() {
-    return localStorage.getItem('username') || '';
-}
 
 async function fetchPosts() {
     try {
@@ -56,12 +44,11 @@ async function fetchPosts() {
 
 async function createPost() {
     const content = document.getElementById('content').value;
-    const username = getUsername();
+    let username = document.getElementById('username').value.trim();
 
+    // Generate a unique username if none is provided
     if (!username) {
-        alert('No username found. Please log in again.');
-        window.location.href = "index.html";
-        return;
+        username = `anonymous${Date.now()}`; // Generate a unique username
     }
 
     if (!content.trim()) {
@@ -83,7 +70,8 @@ async function createPost() {
 
         if (response.ok) {
             await fetchPosts();
-            document.getElementById('content').value = '';
+            document.getElementById('content').value = ''; // Clear content input after posting
+            document.getElementById('username').value = ''; // Clear username input after posting
         } else {
             const errorData = await response.json();
             alert(`Failed to create post: ${errorData.error || 'Unknown error'}`);
