@@ -20,10 +20,14 @@ locals {
   pubnet_name       = var.pubnet_name
   image_name        = var.image_name
   flavor_name       = var.flavor_name
+  
 }
 
 
+
+
 terraform {
+  required_version = ">= 0.14.0"
   required_providers {
     openstack = {
       source  = "terraform-provider-openstack/openstack"
@@ -35,7 +39,7 @@ terraform {
 # Configure the OpenStack Provider
 provider "openstack" {
   auth_url          = var.auth_url
-  user_name          = var.user_name
+  user_name         = var.user_name
   password          = var.user_password
   tenant_name       = var.tenant_name
   tenant_id         = var.project_id
@@ -45,226 +49,176 @@ provider "openstack" {
 }
 
 # Reference existing keypair
-data "openstack_compute_keypair_v2" "terraform-keypair" {
+data "openstack_compute_keypair_v2" "terraform_keypair" {
   name = var.key_pair
 }
 
-# Declare the security group
-resource "openstack_networking_secgroup_v2" "terraform-secgroup" {
-  name        = "terraform-secgroup"
-  description = "Security group for Terraform instances"
+# Declare the main security group
+resource "openstack_networking_secgroup_v2" "terraform_secgroup" {
+  name        = "my-terraform-secgroup"
+  description = "Security group for Docker instance"
+}
+
+
+# Allow inbound HTTP on port 8080
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_http" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 8080
+  port_range_max    = 8080
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
+# Allow inbound backend port 5001
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_backend" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 5001
+  port_range_max    = 5001
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
+# Allow inbound SSH on port 22
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_ssh" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 22
+  port_range_max    = 22
+  remote_ip_prefix  = "0.0.0.0/0"
 }
 
 # Declare the networking resources
-resource "openstack_networking_network_v2" "terraform-network-1" {
+resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
   admin_state_up = true
 }
 
-resource "openstack_networking_subnet_v2" "terraform-subnet-1" {
+resource "openstack_networking_subnet_v2" "terraform_subnet" {
   name            = "my-terraform-subnet-1"
-  network_id      = openstack_networking_network_v2.terraform-network-1.id
-  cidr            = "192.168.255.0/24" // Adjust CIDR as needed
+  network_id      = openstack_networking_network_v2.terraform_network.id
+  cidr            = "192.168.255.0/24" # Adjust CIDR as needed
   ip_version      = 4
-  dns_nameservers = var.dns_servers
+  dns_nameservers = local.dns_servers
 }
 
-# Create instances
-resource "openstack_compute_instance_v2" "terraform-instance-1" {
-  name              = "my-terraform-instance-1"
-  image_name        = var.image_name
-  flavor_name       = var.flavor_name
-  key_pair          = data.openstack_compute_keypair_v2.terraform-keypair.name
-  security_groups   = [openstack_networking_secgroup_v2.terraform-secgroup.name]
+###############################################################################
+# Attach Subnet to an Existing Router (if you have one)
+###############################################################################
+data "openstack_networking_router_v2" "existing_router" {
+  name = local.router_name
+}
 
-  depends_on = [openstack_networking_subnet_v2.terraform-subnet-1]
+resource "openstack_networking_router_interface_v2" "router_interface_1" {
+  router_id = data.openstack_networking_router_v2.existing_router.id
+  subnet_id = openstack_networking_subnet_v2.terraform_subnet.id
+}
+
+###############################################################################
+# Create Compute Instances
+###############################################################################
+resource "openstack_compute_instance_v2" "docker_instances" {
+  count             = 3
+  name              = "docker-instance-${count.index + 1}"
+  image_name        = local.image_name
+  flavor_name       = local.flavor_name
+  key_pair          = data.openstack_compute_keypair_v2.terraform_keypair.name
+  security_groups   = [openstack_networking_secgroup_v2.terraform_secgroup.name]
+
+  depends_on = [openstack_networking_subnet_v2.terraform_subnet]
 
   network {
-    uuid = openstack_networking_network_v2.terraform-network-1.id
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update
-    apt-get -y install apache2
-    rm /var/www/html/index.html
-    cat > /var/www/html/index.html << INNEREOF
-    <!DOCTYPE html>
-    <html>
-      <body>
-        <h1>It works!</h1>
-        <p>hostname</p>
-      </body>
-    </html>
-    INNEREOF
-    sed -i "s/hostname/terraform-instance-1/" /var/www/html/index.html
-    sed -i "1s/$/ terraform-instance-1/" /etc/hosts
-  EOF
-}
-
-resource "openstack_compute_instance_v2" "terraform-instance-2" {
-  name            = "my-terraform-instance-2"
-  image_name      = var.image_name
-  flavor_name     = var.flavor_name
-  key_pair        = data.openstack_compute_keypair_v2.terraform-keypair.name
-  security_groups = [openstack_networking_secgroup_v2.terraform-secgroup.name]
-
-  depends_on = [openstack_networking_subnet_v2.terraform-subnet-1]
-
-  network {
-    uuid = openstack_networking_network_v2.terraform-network-1.id
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update
-    apt-get -y install apache2
-    rm /var/www/html/index.html
-    cat > /var/www/html/index.html << INNEREOF
-    <!DOCTYPE html>
-    <html>
-      <body>
-        <h1>It works!</h1>
-        <p>hostname</p>
-      </body>
-    </html>
-    INNEREOF
-    sed -i "s/hostname/terraform-instance-2/" /var/www/html/index.html
-    sed -i "1s/$/ terraform-instance-2/" /etc/hosts
-  EOF
-}
-
-# Create load balancer (no floating IP handled in Terraform)
-resource "openstack_lb_loadbalancer_v2" "lb_1" {
-  vip_subnet_id = openstack_networking_subnet_v2.terraform-subnet-1.id
-}
-
-resource "openstack_lb_listener_v2" "listener_1" {
-  protocol         = "HTTP"
-  protocol_port    = 80
-  loadbalancer_id  = openstack_lb_loadbalancer_v2.lb_1.id
-  connection_limit = 1024
-}
-
-resource "openstack_lb_pool_v2" "pool_1" {
-  protocol    = "HTTP"
-  lb_method   = "ROUND_ROBIN"
-  listener_id = openstack_lb_listener_v2.listener_1.id
-}
-
-resource "openstack_lb_members_v2" "members_1" {
-  pool_id = openstack_lb_pool_v2.pool_1.id
-
-  member {
-    address       = openstack_compute_instance_v2.terraform-instance-1.access_ip_v4
-    protocol_port = 80
-  }
-
-  member {
-    address       = openstack_compute_instance_v2.terraform-instance-2.access_ip_v4
-    protocol_port = 80
-  }
-}
-
-# Create Docker instance
-resource "openstack_compute_instance_v2" "docker_instance" {
-  name            = "docker-instance"
-  image_name      = "ubuntu-22.04-jammy-server-cloud-image-amd64"
-  flavor_name     = var.docker_flavor_name
-  key_pair        = var.key_pair
-  security_groups = [openstack_networking_secgroup_v2.docker_secgroup.name]
-
-  network {
-    uuid = openstack_networking_network_v2.docker_network.id
+    uuid = openstack_networking_network_v2.terraform_network.id
   }
 
   user_data = <<-EOT
     #!/bin/bash
-    # Update and install required packages
     apt-get update
-    apt-get install -y git docker.io
+    apt-get install -y git docker.io curl
 
-    # Enable Docker to start on boot
+    # Install Docker Compose (latest release)
+    LATEST_RELEASE=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url | grep linux-x86_64 | cut -d '"' -f 4)
+    curl -L "$LATEST_RELEASE" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+
     systemctl start docker
     systemctl enable docker
 
-    # Clone the GitHub repository
-    git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/CloudServ5-Message-Board
+    # Clone your GitHub repository containing docker-compose.yml
+    git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
 
     # Navigate to the cloned directory
-    cd /tmp/CloudServ5-Message-Board
+    cd /tmp/myapp
 
-    # Build the Docker image
-    docker build -t message-board-app .
-
-    # Optionally, push the image to Docker Hub
-    docker login -u "your-dockerhub-username" -p "your-dockerhub-password" // Fill in your Docker Hub credentials
-    docker tag message-board-app your-dockerhub-username/message-board-app:latest // Fill in your Docker Hub username
-    docker push your-dockerhub-username/message-board-app:latest // Fill in your Docker Hub username
-
-    # Run the container
-    docker run -d -p 80:80 --name message-board message-board-app
+    # Run docker-compose
+    /usr/local/bin/docker-compose up -d
   EOT
 }
 
-# Networking Resources for Docker
-resource "openstack_networking_network_v2" "docker_network" {
-  name = var.docker_network_name
+###############################################################################
+# Create Load Balancer
+###############################################################################
+resource "openstack_lb_loadbalancer_v2" "lb_1" {
+  name           = "my-terraform-lb"
+  vip_subnet_id  = openstack_networking_subnet_v2.terraform_subnet.id
+  admin_state_up = true
 }
 
-resource "openstack_networking_subnet_v2" "docker_subnet" {
-  network_id = openstack_networking_network_v2.docker_network.id
-  cidr       = var.docker_subnet_cidr
-  ip_version = 4
-  gateway_ip = var.docker_gateway_ip
+resource "openstack_lb_listener_v2" "listener_1" {
+  loadbalancer_id  = openstack_lb_loadbalancer_v2.lb_1.id
+  protocol         = "HTTP"
+  protocol_port    = 80
+  connection_limit = 1024
 }
 
-resource "openstack_networking_router_v2" "docker_router" {
-  name = var.docker_router_name
+resource "openstack_lb_pool_v2" "pool_1" {
+  loadbalancer_id = openstack_lb_loadbalancer_v2.lb_1.id
+  protocol        = "HTTP"
+  lb_method       = "ROUND_ROBIN"
 }
 
-resource "openstack_networking_router_interface_v2" "router_interface" {
-  router_id = openstack_networking_router_v2.docker_router.id
-  subnet_id = openstack_networking_subnet_v2.docker_subnet.id
+# Create Load Balancer Members
+resource "openstack_lb_member_v2" "members" {
+  count         = 3
+  pool_id       = openstack_lb_pool_v2.pool_1.id
+  address       = openstack_compute_instance_v2.docker_instances[count.index].access_ip_v4
+  protocol_port = 8080
 }
 
-# Security Group for Docker
-resource "openstack_networking_secgroup_v2" "docker_secgroup" {
-  name = var.docker_secgroup_name
+# Optional: Create a Health Monitor for the Load Balancer
+resource "openstack_lb_monitor_v2" "monitor_1" {
+  pool_id        = openstack_lb_pool_v2.pool_1.id
+  type           = "HTTP"
+  delay          = 5
+  timeout        = 5
+  max_retries    = 3
+  http_method    = "GET"
+  url_path       = "/"
+  expected_codes = "200"
 }
 
-resource "openstack_networking_secgroup_rule_v2" "allow_http" {
-  security_group_id = openstack_networking_secgroup_v2.docker_secgroup.id
-  direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 80
-  port_range_max    = 80
-  remote_ip_prefix  = "0.0.0.0/0"
+###############################################################################
+# Assign Floating IP to Load Balancer
+###############################################################################
+resource "openstack_networking_floatingip_v2" "lb_floating_ip" {
+  pool    = local.pubnet_name
+  port_id = openstack_lb_loadbalancer_v2.lb_1.vip_port_id
 }
 
-# Output the instance public IP
-output "instance_ip" {
-  value = openstack_compute_instance_v2.docker_instance.access_ip_v4
+###############################################################################
+# Outputs
+###############################################################################
+output "loadbalancer_floating_ip" {
+  description = "Floating IP for the load balancer"
+  value       = openstack_networking_floatingip_v2.lb_floating_ip.address
 }
 
-# Output manually assigned floating IP
-output "loadbalancer_vip_addr" {
-  value = "10.32.6.117"
-}
-
-# Clone the GitHub repository
-resource "null_resource" "clone_repo" {
-  provisioner "local-exec" {
-    command = <<-EOT
-      if [ -d "/tmp/CloudServ5-Message-Board" ]; then
-        rm -rf /tmp/CloudServ5-Message-Board
-      fi
-      git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/CloudServ5-Message-Board
-    EOT
-  }
-
-  triggers = {
-    always_run = "${timestamp()}" // This will force the clone command to run every time you apply
-  }
+output "private_ips" {
+  description = "Private IPs of the Docker instances"
+  value       = [for instance in openstack_compute_instance_v2.docker_instances : instance.access_ip_v4]
 }

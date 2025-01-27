@@ -92,7 +92,7 @@ variable "docker_flavor_name" {
 variable "key_pair" {
   type    = string
   description = "The name of the key pair to use"
-  default = "CloudServ5-key"
+  default = "DockerInstanceKeyPair"
 }
 
 variable "docker_network_name" {
