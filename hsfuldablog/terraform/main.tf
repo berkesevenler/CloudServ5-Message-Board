@@ -169,7 +169,7 @@ user_data = <<-EOT
     git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
 
     # Navigate to the cloned directory
-    cd /tmp/myapp
+    cd /tmp/myapp/hsfuldablog
 
     # Run docker-compose
     docker compose up -d
