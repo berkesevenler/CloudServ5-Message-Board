@@ -136,18 +136,34 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
-  user_data = <<-EOT
+user_data = <<-EOT
     #!/bin/bash
     apt-get update
-    apt-get install -y git docker.io curl
 
-    # Install Docker Compose (latest release)
-    LATEST_RELEASE=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url | grep linux-x86_64 | cut -d '"' -f 4)
-    curl -L "$LATEST_RELEASE" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+    # Install necessary packages
+    apt-get install -y ca-certificates curl git
 
+    # Install Docker
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add Docker repository to apt sources
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    # Add the default cloud image user to the docker group
+    usermod -aG docker ubuntu
+
+    # Enable and start Docker services
+    systemctl enable docker.service
+    systemctl enable containerd.service
     systemctl start docker
-    systemctl enable docker
 
     # Clone your GitHub repository containing docker-compose.yml
     git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
@@ -156,7 +172,7 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     cd /tmp/myapp
 
     # Run docker-compose
-    /usr/local/bin/docker-compose up -d
+    docker compose up -d
   EOT
 }
 
