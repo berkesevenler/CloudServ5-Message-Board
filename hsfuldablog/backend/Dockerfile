@@ -1,15 +1,30 @@
-FROM python:3.9-slim
+# Use a lightweight Debian-based image with build tools
+FROM debian:bullseye-slim
 
 WORKDIR /app
 
-# Install pip and dependencies
-RUN apt-get update && apt-get install -y python3-pip && apt-get clean
+# Install necessary dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    make \
+    libc-dev \
+    libssl-dev \
+    libmongoc-dev \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements.txt
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install Mongoose (Lightweight HTTP Server Library)
+RUN curl -fsSL https://mongoose.ws/download/mongoose.c -o mongoose.c
 
+# Copy source files into the container
 COPY . .
 
-EXPOSE 5000
+# Compile the C program
+RUN gcc -o server server.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
 
-CMD ["python3", "app.py"]
+# Expose port
+EXPOSE 5001
+
+# Run the C server
+CMD ["./server"]
