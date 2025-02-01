@@ -136,7 +136,7 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
-user_data = <<-EOT
+  user_data = <<-EOT
     #!/bin/bash
     set -e
     set -x
@@ -144,37 +144,42 @@ user_data = <<-EOT
     # Use a different Debian mirror
     sed -i 's|deb.debian.org|ftp.us.debian.org|g' /etc/apt/sources.list
 
-    # Update and install necessary packages for building and Docker
+    # Update and install necessary packages
     apt-get update
-    apt-get install -y \
-      gcc \
-      musl-dev \
-      libmongoc-dev \
-      curl \
-      docker.io \
-      git
+    apt-get install -y ca-certificates curl git
 
-    # Clone the application source code
+    # Install Docker
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add Docker repository to apt sources
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    # Add the default cloud image user to the docker group
+    usermod -aG docker ubuntu
+
+    # Enable and start Docker services
+    systemctl enable docker.service
+    systemctl enable containerd.service
+    systemctl start docker
+
+    # Clone your GitHub repository containing docker-compose.yml
     git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
 
-    # Navigate to the backend directory
-    cd /tmp/myapp/backend
+    # Navigate to the cloned directory
+    cd /tmp/myapp/hsfuldablog
 
-    # Download the Mongoose library
-    curl -fsSL https://mongoose.ws/download/mongoose.c -o mongoose.c
-
-    # Compile the backend binary
-    gcc -o server app.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
-
-    # Move the compiled binary to the Docker build context
-    mv server /tmp/myapp/backend/
-
-    # Build the Docker image for the backend
-    docker build -t backend /tmp/myapp/backend
-
-    # Run the backend container
-    docker run -d -p 5001:5001 --name backend backend
-EOT
+    # Run docker-compose
+    docker compose up -d
+  EOT
+}
 
 resource "openstack_lb_loadbalancer_v2" "lb_1" {
   name           = "my-terraform-lb"
