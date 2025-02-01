@@ -4,8 +4,6 @@ variable "group_number" {
   default = "5"
 }
 
-# Commenting out the locals block for future reference
-
 locals {
   auth_url          = var.auth_url
   user_name         = var.user_name
@@ -16,15 +14,11 @@ locals {
   cacert_file       = var.cacert_file
   region_name       = var.region_name
   router_name       = var.router_name
-  dns_servers       = var.dns_servers
+  dns_servers       = ["8.8.8.8", "8.8.4.4"]  # Use Google's public DNS servers
   pubnet_name       = var.pubnet_name
   image_name        = var.image_name
   flavor_name       = var.flavor_name
-  
 }
-
-
-
 
 terraform {
   required_version = ">= 0.14.0"
@@ -36,7 +30,6 @@ terraform {
   }
 }
 
-# Configure the OpenStack Provider
 provider "openstack" {
   auth_url          = var.auth_url
   user_name         = var.user_name
@@ -48,19 +41,15 @@ provider "openstack" {
   cacert_file       = var.cacert_file
 }
 
-# Reference existing keypair
 data "openstack_compute_keypair_v2" "terraform_keypair" {
   name = var.key_pair
 }
 
-# Declare the main security group
 resource "openstack_networking_secgroup_v2" "terraform_secgroup" {
   name        = "my-terraform-secgroup"
   description = "Security group for Docker instance"
 }
 
-
-# Allow inbound HTTP on port 8080
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_http" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "ingress"
@@ -71,7 +60,6 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_http" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
-# Allow inbound backend port 5001
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_backend" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "ingress"
@@ -82,7 +70,6 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_backend" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
-# Allow inbound SSH on port 22
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_ssh" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "ingress"
@@ -93,7 +80,26 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_ssh" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
-# Declare the networking resources
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "egress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 80
+  port_range_max    = 80
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_https" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "egress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 443
+  port_range_max    = 443
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
   admin_state_up = true
@@ -102,14 +108,11 @@ resource "openstack_networking_network_v2" "terraform_network" {
 resource "openstack_networking_subnet_v2" "terraform_subnet" {
   name            = "my-terraform-subnet-1"
   network_id      = openstack_networking_network_v2.terraform_network.id
-  cidr            = "192.168.255.0/24" # Adjust CIDR as needed
+  cidr            = "192.168.255.0/24"
   ip_version      = 4
   dns_nameservers = local.dns_servers
 }
 
-###############################################################################
-# Attach Subnet to an Existing Router (if you have one)
-###############################################################################
 data "openstack_networking_router_v2" "existing_router" {
   name = local.router_name
 }
@@ -119,9 +122,6 @@ resource "openstack_networking_router_interface_v2" "router_interface_1" {
   subnet_id = openstack_networking_subnet_v2.terraform_subnet.id
 }
 
-###############################################################################
-# Create Compute Instances
-###############################################################################
 resource "openstack_compute_instance_v2" "docker_instances" {
   count             = 3
   name              = "docker-instance-${count.index + 1}"
@@ -136,11 +136,16 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
-user_data = <<-EOT
+  user_data = <<-EOT
     #!/bin/bash
-    apt-get update
+    set -e
+    set -x
 
-    # Install necessary packages
+    # Use a different Debian mirror
+    sed -i 's|deb.debian.org|ftp.us.debian.org|g' /etc/apt/sources.list
+
+    # Update and install necessary packages
+    apt-get update
     apt-get install -y ca-certificates curl git
 
     # Install Docker
@@ -176,9 +181,6 @@ user_data = <<-EOT
   EOT
 }
 
-###############################################################################
-# Create Load Balancer
-###############################################################################
 resource "openstack_lb_loadbalancer_v2" "lb_1" {
   name           = "my-terraform-lb"
   vip_subnet_id  = openstack_networking_subnet_v2.terraform_subnet.id
@@ -198,7 +200,6 @@ resource "openstack_lb_pool_v2" "pool_1" {
   lb_method       = "ROUND_ROBIN"
 }
 
-# Create Load Balancer Members
 resource "openstack_lb_member_v2" "members" {
   count         = 3
   pool_id       = openstack_lb_pool_v2.pool_1.id
@@ -206,7 +207,6 @@ resource "openstack_lb_member_v2" "members" {
   protocol_port = 8080
 }
 
-# Optional: Create a Health Monitor for the Load Balancer
 resource "openstack_lb_monitor_v2" "monitor_1" {
   pool_id        = openstack_lb_pool_v2.pool_1.id
   type           = "HTTP"
@@ -218,17 +218,11 @@ resource "openstack_lb_monitor_v2" "monitor_1" {
   expected_codes = "200"
 }
 
-###############################################################################
-# Assign Floating IP to Load Balancer
-###############################################################################
 resource "openstack_networking_floatingip_v2" "lb_floating_ip" {
   pool    = local.pubnet_name
   port_id = openstack_lb_loadbalancer_v2.lb_1.vip_port_id
 }
 
-###############################################################################
-# Outputs
-###############################################################################
 output "loadbalancer_floating_ip" {
   description = "Floating IP for the load balancer"
   value       = openstack_networking_floatingip_v2.lb_floating_ip.address
