@@ -1,29 +1,27 @@
-# Use a lightweight Debian-based image with build tools
-FROM debian:bullseye-slim
+# Use Alpine Linux as a lightweight base image
+FROM alpine:latest
 
 WORKDIR /app
 
 # Install necessary dependencies
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     gcc \
-    make \
-    libc-dev \
-    libssl-dev \
-    libmongoc-dev \
+    musl-dev \
+    libressl-dev \
     curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    mongo-c-driver-dev \
+    make
 
-# Install Mongoose (Lightweight HTTP Server Library)
+# Download Mongoose (Lightweight HTTP Server Library)
 RUN curl -fsSL https://mongoose.ws/download/mongoose.c -o mongoose.c
 
 # Copy source files into the container
 COPY . .
 
 # Compile the C program
-RUN gcc -o server server.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
+RUN gcc -o server app.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
 
-# Expose port
+# Expose port 5001 for the backend service
 EXPOSE 5001
 
 # Run the C server
