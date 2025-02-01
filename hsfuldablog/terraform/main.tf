@@ -136,7 +136,7 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
-  user_data = <<-EOT
+user_data = <<-EOT
     #!/bin/bash
     set -e
     set -x
@@ -144,23 +144,33 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     # Use a different Debian mirror
     sed -i 's|deb.debian.org|ftp.us.debian.org|g' /etc/apt/sources.list
 
-    # Update and install necessary packages
+    # Update and install necessary packages for building and Docker
     apt-get update
-    apt-get install -y ca-certificates curl git
+    apt-get install -y \
+      gcc \
+      musl-dev \
+      libmongoc-dev \
+      curl \
+      ca-certificates \
+      git \
+      docker.io
 
-    # Install Docker
+    # Install Docker's official GPG key and repository
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
-
-    # Add Docker repository to apt sources
     echo \
       "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
       $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
     tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    apt-get install -y \
+      docker-ce \
+      docker-ce-cli \
+      containerd.io \
+      docker-buildx-plugin \
+      docker-compose-plugin
 
     # Add the default cloud image user to the docker group
     usermod -aG docker ubuntu
@@ -170,15 +180,33 @@ resource "openstack_compute_instance_v2" "docker_instances" {
     systemctl enable containerd.service
     systemctl start docker
 
-    # Clone your GitHub repository containing docker-compose.yml
+    # Clone the application source code
     git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
 
-    # Navigate to the cloned directory
+    # Navigate to the backend directory
+    cd /tmp/myapp/backend
+
+    # Download the Mongoose library
+    curl -fsSL https://mongoose.ws/download/mongoose.c -o mongoose.c
+
+    # Compile the backend binary
+    gcc -o server app.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
+
+    # Move the compiled binary to the Docker build context
+    mv server /tmp/myapp/backend/
+
+    # Build the Docker image for the backend
+    docker build -t backend /tmp/myapp/backend
+
+    # Run the backend container
+    docker run -d -p 5001:5001 --name backend backend
+
+    # Navigate to the frontend directory
     cd /tmp/myapp/hsfuldablog
 
-    # Run docker-compose
+    # Run Docker Compose to set up the frontend
     docker compose up -d
-  EOT
+EOT
 }
 
 resource "openstack_lb_loadbalancer_v2" "lb_1" {
