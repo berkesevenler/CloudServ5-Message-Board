@@ -3,8 +3,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Install necessary dependencies
-RUN apk add --no-cache \
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirror.sfo12.us.leaseweb.net|g' /etc/apk/repositories && \
+    apk add --no-cache \
     gcc \
     musl-dev \
     libressl-dev \
