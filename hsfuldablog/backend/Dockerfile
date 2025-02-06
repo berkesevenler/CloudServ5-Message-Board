@@ -1,7 +1,11 @@
-FROM node:18-alpine
+FROM gcc:latest
+
+WORKDIR /usr/src/app
 
 # Copy package files
-COPY ./ ./
+COPY . .
+
+RUN gcc -o app app.c $(pkg-config --cflags --libs libmongoc-1.0)
 
 # Expose port
 EXPOSE 5001
