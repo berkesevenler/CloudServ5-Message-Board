@@ -100,6 +100,15 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_https" 
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
+# This rule is commented out because OpenStack creates a default "allow all outbound" rule
+# resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_all" {
+#   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+#   direction         = "egress"
+#   ethertype        = "IPv4"
+#   protocol         = "any"
+#   remote_ip_prefix = "0.0.0.0/0"
+# }
+
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
   admin_state_up = true
@@ -130,83 +139,66 @@ resource "openstack_compute_instance_v2" "docker_instances" {
   key_pair          = data.openstack_compute_keypair_v2.terraform_keypair.name
   security_groups   = [openstack_networking_secgroup_v2.terraform_secgroup.name]
 
-  depends_on = [openstack_networking_subnet_v2.terraform_subnet]
-
   network {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
-user_data = <<-EOT
-    #!/bin/bash
-    set -e
-    set -x
+  user_data = <<-EOT
+    #cloud-config
+    package_update: true
+    package_upgrade: true
 
-    # Use a different Debian mirror
-    sed -i 's|deb.debian.org|ftp.us.debian.org|g' /etc/apt/sources.list
+    packages:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - docker.io
+      - docker-compose
+      - git
 
-    # Update and install necessary packages for building and Docker
-    apt-get update
-    apt-get install -y \
-      gcc \
-      musl-dev \
-      libmongoc-dev \
-      curl \
-      ca-certificates \
-      git \
-      docker.io
+    runcmd:
+      - systemctl enable docker
+      - systemctl start docker
+      - systemctl status docker
+      
+      # Clone and setup application with proper path handling
+      - mkdir -p /tmp/myapp
+      - cd /tmp/myapp
+      - git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git .
+      
+      # Build and run backend
+      - cd /tmp/myapp/backend
+      - docker build -t backend .
+      - docker run -d -p 5001:5001 --name backend --restart unless-stopped backend
+      
+      # Build and run frontend
+      - cd /tmp/myapp/hsfuldablog
+      - docker-compose down --remove-orphans || true
+      - docker-compose pull
+      - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
+      
+      # Add debug logging
+      - echo "Docker containers status:" >> /var/log/docker-status.log
+      - docker ps -a >> /var/log/docker-status.log
+      - echo "Docker Compose logs:" >> /var/log/docker-status.log
+      - cd /tmp/myapp/hsfuldablog && docker-compose logs >> /var/log/docker-status.log
 
-    # Install Docker's official GPG key and repository
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null
+    write_files:
+      - path: /etc/docker/daemon.json
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "100m",
+              "max-file": "3"
+            }
+          }
+        owner: root:root
+        permissions: '0644'
 
-    apt-get update
-    apt-get install -y \
-      docker-ce \
-      docker-ce-cli \
-      containerd.io \
-      docker-buildx-plugin \
-      docker-compose-plugin
-
-    # Add the default cloud image user to the docker group
-    usermod -aG docker ubuntu
-
-    # Enable and start Docker services
-    systemctl enable docker.service
-    systemctl enable containerd.service
-    systemctl start docker
-
-    # Clone the application source code
-    git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git /tmp/myapp
-
-    # Navigate to the backend directory
-    cd /tmp/myapp/backend
-
-    # Download the Mongoose library
-    curl -fsSL https://mongoose.ws/download/mongoose.c -o mongoose.c
-
-    # Compile the backend binary
-    gcc -o server app.c mongoose.c -lmongoc-1.0 -lbson-1.0 -lpthread -O2
-
-    # Move the compiled binary to the Docker build context
-    mv server /tmp/myapp/backend/
-
-    # Build the Docker image for the backend
-    docker build -t backend /tmp/myapp/backend
-
-    # Run the backend container
-    docker run -d -p 5001:5001 --name backend backend
-
-    # Navigate to the frontend directory
-    cd /tmp/myapp/hsfuldablog
-
-    # Run Docker Compose to set up the frontend
-    docker compose up -d
-EOT
+    final_message: "System configuration completed after $UPTIME seconds"
+  EOT
 }
 
 resource "openstack_lb_loadbalancer_v2" "lb_1" {
@@ -216,34 +208,33 @@ resource "openstack_lb_loadbalancer_v2" "lb_1" {
 }
 
 resource "openstack_lb_listener_v2" "listener_1" {
-  loadbalancer_id  = openstack_lb_loadbalancer_v2.lb_1.id
-  protocol         = "HTTP"
-  protocol_port    = 80
-  connection_limit = 1024
+  name            = "my-listener"
+  protocol        = "HTTP"
+  protocol_port   = 8080
+  loadbalancer_id = openstack_lb_loadbalancer_v2.lb_1.id
 }
 
 resource "openstack_lb_pool_v2" "pool_1" {
-  loadbalancer_id = openstack_lb_loadbalancer_v2.lb_1.id
-  protocol        = "HTTP"
-  lb_method       = "ROUND_ROBIN"
+  name        = "my-pool"
+  protocol    = "HTTP"
+  lb_method   = "ROUND_ROBIN"
+  listener_id = openstack_lb_listener_v2.listener_1.id
 }
 
-resource "openstack_lb_member_v2" "members" {
-  count         = 3
+resource "openstack_lb_member_v2" "member_1" {
+  count         = 2
   pool_id       = openstack_lb_pool_v2.pool_1.id
   address       = openstack_compute_instance_v2.docker_instances[count.index].access_ip_v4
   protocol_port = 8080
 }
 
 resource "openstack_lb_monitor_v2" "monitor_1" {
-  pool_id        = openstack_lb_pool_v2.pool_1.id
-  type           = "HTTP"
-  delay          = 5
-  timeout        = 5
-  max_retries    = 3
-  http_method    = "GET"
-  url_path       = "/"
-  expected_codes = "200"
+  pool_id     = openstack_lb_pool_v2.pool_1.id
+  type        = "HTTP"
+  delay       = 5
+  timeout     = 3
+  max_retries = 3
+  url_path    = "/"
 }
 
 resource "openstack_networking_floatingip_v2" "lb_floating_ip" {

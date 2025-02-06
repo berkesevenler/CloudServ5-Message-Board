@@ -3,7 +3,7 @@ version: '3.9'
 services:
   frontend:
     build:
-      context: ./frontend
+      context: ../frontend  # Adjusted path since we're in hsfuldablog directory
     ports:
       - "8080:80"  # Expose the frontend to the host on port 8080
     depends_on:
@@ -13,13 +13,16 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ../backend  # Adjusted path since we're in hsfuldablog directory
     ports:
       - "5001:5001"  # Expose backend on port 5000 for debugging
     environment:
-      MONGO_URI: "mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority"
+      - NODE_ENV=production
+      - MONGO_URI=mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority
+    restart: unless-stopped
     networks:
       - app-network
 
 networks:
   app-network:
+    driver: bridge

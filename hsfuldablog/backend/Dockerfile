@@ -1,13 +1,21 @@
-# Use a minimal base image for running the precompiled binary
-FROM alpine:latest
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy the precompiled binary into the container
-COPY server .
+# Copy package files
+COPY package*.json ./
 
-# Expose the necessary port
+# Install dependencies
+RUN npm install
+
+# Copy all source files
+COPY /tmp/myapp/* /app
+
+# Expose port
 EXPOSE 5001
 
-# Run the server binary
-CMD ["./server"]
+# Set environment variables
+ENV NODE_ENV=production
+
+# Start the server directly with node
+CMD ["node", "index.js"]
