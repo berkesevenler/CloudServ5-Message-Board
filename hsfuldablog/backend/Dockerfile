@@ -7,6 +7,7 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
+RUN npm install cors  # Add cors package if not already in package.json
 
 # Copy all source files
 COPY . .
