@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:latest
 
 WORKDIR /app
 
@@ -14,8 +14,5 @@ COPY . .
 # Expose port
 EXPOSE 5001
 
-# Set environment variables
-ENV NODE_ENV=production
-
-# Start the server directly with node
-CMD ["node", "index.js"]
+# Start the server directly with npm
+CMD ["npm", "start"]

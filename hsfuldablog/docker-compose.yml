@@ -15,7 +15,7 @@ services:
     build:
       context: /tmp/myapp/hsfuldablog/backend  # Adjusted path since we're in hsfuldablog directory
     ports:
-      - "8080:80"  # Expose backend on port 5000 for debugging
+      - "5001:5001"  # Expose backend on port 5000 for debugging
     environment:
       - NODE_ENV=production
       - MONGO_URI=mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority
