@@ -100,6 +100,17 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_https" 
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
+# Add to your security group rules
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_mongodb" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "egress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 27017
+  port_range_max    = 27017
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
 # This rule is commented out because OpenStack creates a default "allow all outbound" rule
 # resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_all" {
 #   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
@@ -108,6 +119,7 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_https" 
 #   protocol         = "any"
 #   remote_ip_prefix = "0.0.0.0/0"
 # }
+
 
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"

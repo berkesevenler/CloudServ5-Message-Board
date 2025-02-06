@@ -1,21 +1,14 @@
-FROM gcc:latest
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Install MongoDB C driver dependencies
-RUN apt-get update && apt-get install -y \
-    libmongoc-1.0-0 \
-    libmongoc-dev \
-    pkg-config
-
-# Copy all source files
+# Copy package files
 COPY . .
 
-# Compile the application
 RUN gcc -o app app.c $(pkg-config --libs --cflags libmongoc-1.0) -lmongoose
 
 # Expose port
 EXPOSE 5001
 
-# Run the application
+# Start the server directly with npm
 CMD ["./app"]
