@@ -3,11 +3,10 @@ FROM node:latest
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY . .
 
 # Install dependencies
 RUN npm install
-RUN npm install cors  # Add cors package if not already in package.json
 
 # Copy all source files
 COPY . .
