@@ -182,7 +182,7 @@ resource "openstack_compute_instance_v2" "docker_instances" {
       # Build and run backend
       - cd /tmp/myapp/hsfuldablog/backend
       - docker build -t backend .
-      - docker run -d -p 5001:5001 --name backend --restart unless-stopped backend
+      - docker run -d -p 5001:50 --name backend --restart unless-stopped backend
       
       # Build and run frontend
       - cd /tmp/myapp/hsfuldablog
