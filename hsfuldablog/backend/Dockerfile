@@ -1,9 +1,7 @@
 FROM node:18-alpine
 
-WORKDIR /app
-
 # Copy package files
-COPY . .
+COPY ./ ./
 
 # Expose port
 EXPOSE 5001
