@@ -1,4 +1,4 @@
-FROM node:latest
+FROM node:18-alpine
 
 WORKDIR /app
 
@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 5001
 
 # Start the server directly with npm
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
