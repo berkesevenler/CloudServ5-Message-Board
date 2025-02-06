@@ -8,9 +8,6 @@ COPY . .
 # Install dependencies
 RUN npm install
 
-# Copy all source files
-COPY . .
-
 # Expose port
 EXPOSE 5001
 
