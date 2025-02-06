@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN npm install
 
 # Copy all source files
-COPY /tmp/myapp/* /app
+COPY /tmp/myapp/hsfuldablog/*/app
 
 # Expose port
 EXPOSE 5001
