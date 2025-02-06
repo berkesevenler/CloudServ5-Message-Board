@@ -168,7 +168,7 @@ resource "openstack_compute_instance_v2" "docker_instances" {
       - git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git .
       
       # Build and run backend
-      - cd /tmp/myapp/backend
+      - cd /tmp/myapp/hsfuldablog/backend
       - docker build -t backend .
       - docker run -d -p 5001:5001 --name backend --restart unless-stopped backend
       
