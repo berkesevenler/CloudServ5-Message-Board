@@ -1,25 +1,24 @@
 version: '3.9'
 
 services:
-  frontend:
-    build:
-      context: ./frontend
+  backend:
+    build: ./backend
+    environment:
+      MONGO_URI: "mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority"
     ports:
-      - "8080:80"  # Expose the frontend to the host on port 8080
+      - "5001:5001"
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
     depends_on:
       - backend
     networks:
       - app-network
 
-  backend:
-    build:
-      context: ./backend
-    ports:
-      - "5001:5001"  # Expose backend on port 5000 for debugging
-    environment:
-      MONGO_URI: "mongodb+srv://admin:4t4JdIInKHMY5CZz@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority"
-    networks:
-      - app-network
-
 networks:
   app-network:
+    driver: bridge

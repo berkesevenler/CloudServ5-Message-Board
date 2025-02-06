@@ -1,11 +1,7 @@
-# Use a lightweight nginx image
+# frontend/Dockerfile
+
 FROM nginx:alpine
-
-# Copy your static files to nginx's web directory
-COPY ./ /usr/share/nginx/html
-
-# Expose port 80 to make it accessible
+# Copy your static files into Nginx’s serving directory
+COPY . /usr/share/nginx/html
 EXPOSE 80
-
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
