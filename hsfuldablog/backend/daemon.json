@@ -1,0 +1,7 @@
+{
+  "default-network-opts": {
+    "bridge": {
+     "com.docker.network.driver.mtu": "1350"
+    }
+  }
+}
