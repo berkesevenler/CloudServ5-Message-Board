@@ -1,7 +1,5 @@
-FROM gcc:latest
+FROM debian:latest
 
-ENV http_proxy 127.0.0.1
-ENV https_proxy 127.0.0.1
 
 WORKDIR /usr/src/app
 
