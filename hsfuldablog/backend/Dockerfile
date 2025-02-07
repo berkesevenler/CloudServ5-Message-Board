@@ -7,13 +7,14 @@ WORKDIR /usr/src/app
 
 
 # Install necessary dependencies
-# RUN apt-get update && apt-get install -y libmongoc-1.0-0 libmongoc-1.0-dev pkg-config
+
+RUN sudo apt-get update && sudo apt-get install -y libmongoc-1.0-0 libmongoc-1.0-dev pkg-config
 
 # Copy source code
 COPY . .
 
 # Compile the application
-# RUN gcc -o app app.c $(pkg-config --cflags --libs libmongoc-1.0) && chmod +x app
+RUN sudo gcc -o app app.c $(pkg-config --cflags --libs libmongoc-1.0) && sudo chmod +x app
 
 # Expose port
 EXPOSE 5001
