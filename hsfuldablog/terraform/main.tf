@@ -111,14 +111,24 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_mongodb" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
-# This rule is commented out because OpenStack creates a default "allow all outbound" rule
-# resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_all" {
-#   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
-#   direction         = "egress"
-#   ethertype        = "IPv4"
-#   protocol         = "any"
-#   remote_ip_prefix = "0.0.0.0/0"
-# }
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound_all" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  remote_ip_prefix = "0.0.0.0/0"
+  port_range_min   = 1
+  port_range_max   = 65535
+}
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_dns" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "udp"
+  port_range_min   = 53
+  port_range_max   = 53
+  remote_ip_prefix = "0.0.0.0/0"
+}
 
 
 resource "openstack_networking_network_v2" "terraform_network" {
