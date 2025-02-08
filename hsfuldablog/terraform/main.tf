@@ -180,31 +180,26 @@ resource "openstack_compute_instance_v2" "docker_instances" {
       - git
 
     runcmd:
+      # Enable and start Docker
       - systemctl enable docker
       - systemctl start docker
-      - systemctl status docker
-      
-      # Clone and setup application with proper path handling
+
+      # Clone and setup application
       - mkdir -p /tmp/myapp
       - cd /tmp/myapp
       - git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git .
-      
-      # Build and run backend
-      - cd /tmp/myapp/hsfuldablog/backend
-      - docker build --network=host -t backend .
-      - docker run -d -p 5001:5001 --name backend --restart unless-stopped backend
-      
-      # Build and run frontend
-      - cd /tmp/myapp/hsfuldablog/frontend
+
+      # Run Docker Compose
+      - cd /tmp/myapp/hsfuldablog
       - docker-compose down --remove-orphans || true
       - docker-compose pull
       - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
-      
-      # Add debug logging
+
+      # Debugging - Log Docker status
       - echo "Docker containers status:" >> /var/log/docker-status.log
       - docker ps -a >> /var/log/docker-status.log
       - echo "Docker Compose logs:" >> /var/log/docker-status.log
-      - cd /tmp/myapp/hsfuldablog && docker-compose logs >> /var/log/docker-status.log
+      - docker-compose logs >> /var/log/docker-status.log
 
     write_files:
       - path: /etc/docker/daemon.json
