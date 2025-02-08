@@ -1,6 +1,14 @@
 {
+  "name": "express-backend",
+  "version": "1.0.0",
+  "description": "Message board backend in Express.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "mongodb": "^6.12.0",
-    "libmongoc-dev": "^1.0"
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "mongodb": "^5.0.1"
   }
 }
