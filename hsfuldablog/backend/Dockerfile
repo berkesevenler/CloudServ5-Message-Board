@@ -24,4 +24,4 @@ COPY . .
 EXPOSE 5001
 
 # Run the compiled application
-CMD ["bash"]
+CMD ["tail", "-f", "/dev/null"]
