@@ -80,6 +80,16 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_ssh" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_mongodb_ingress" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 27017
+  port_range_max    = 27017
+  remote_ip_prefix  = "0.0.0.0/0" # Change this to a more restrictive range if possible
+}
+
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_outbound" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "egress"
