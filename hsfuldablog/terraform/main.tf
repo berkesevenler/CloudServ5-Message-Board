@@ -253,10 +253,32 @@ resource "openstack_lb_pool_v2" "pool_1" {
 }
 
 resource "openstack_lb_member_v2" "member_1" {
-  count         = 2
-  pool_id       = openstack_lb_pool_v2.pool_1.id
-  address       = openstack_compute_instance_v2.docker_instances[count.index].access_ip_v4
+  count   = 2
+  pool_id = openstack_lb_pool_v2.pool_1.id
+  address = openstack_compute_instance_v2.docker_instances[count.index].network.0.fixed_ip_v4
   protocol_port = 8080
+}
+
+resource "openstack_lb_listener_v2" "listener_backend_5001" {
+  name            = "my-backend-listener"
+  protocol        = "HTTP"
+  protocol_port   = 5001
+  loadbalancer_id = openstack_lb_loadbalancer_v2.lb_1.id
+}
+
+resource "openstack_lb_pool_v2" "pool_backend_5001" {
+  name        = "my-backend-pool"
+  protocol    = "HTTP"
+  lb_method   = "ROUND_ROBIN"
+  listener_id = openstack_lb_listener_v2.listener_backend_5001.id
+}
+
+resource "openstack_lb_member_v2" "member_backend_5001" {
+  count         = 2
+  pool_id       = openstack_lb_pool_v2.pool_backend_5001.id
+  # Use the VM’s private IP for address
+  address       = openstack_compute_instance_v2.docker_instances[count.index].network.0.fixed_ip_v4
+  protocol_port = 5001  # The container’s published host port for backend
 }
 
 resource "openstack_lb_monitor_v2" "monitor_1" {
