@@ -20,7 +20,7 @@ services:
       - "5001:5001"  # Expose backend on port 5000 for debugging
     environment:
       - NODE_ENV=production
-      - MONGO_URI=mongodb+srv://admin:fbftuKPSZwNfv4a2@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&w=majority
+      - MONGO_URI=mongodb://admin:fbftuKPSZwNfv4a2@18.196.48.210:27017,3.67.190.44:27017/messageboard?replicaSet=atlas-wgs067-shard-0&authSource=admin&ssl=true
     restart: unless-stopped
     networks:
       - app-network
