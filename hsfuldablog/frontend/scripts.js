@@ -1,5 +1,5 @@
 // Initialize API_BASE_URL properly
-const API_BASE_URL = 'http://REPLACE_LB_FIP:5001/';
+const API_BASE_URL = 'http://REPLACE_LB_FIP:5001';
 
 window.onload = function () {
     // Fetch posts when the website loads
