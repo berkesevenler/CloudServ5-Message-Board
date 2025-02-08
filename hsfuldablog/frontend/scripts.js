@@ -1,7 +1,5 @@
 // Initialize API_BASE_URL properly
-const API_BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:5001'  // Use localhost for development
-    : 'http://localhost:5001';   // Use backend service in Docker
+const API_BASE_URL = 'http://replace_lb_fip:5001/';
 
 window.onload = function () {
     // Fetch posts when the website loads

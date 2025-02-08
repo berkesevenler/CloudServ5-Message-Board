@@ -3,27 +3,28 @@ version: '3.9'
 services:
   frontend:
     build:
-      context: /tmp/myapp/hsfuldablog/frontend  
+      context: /tmp/myapp/hsfuldablog/frontend
       # Adjusted path since we're in hsfuldablog directory
+      # Expose the frontend to the host on port 8080
     ports:
-      - "8080:80"  # Expose the frontend to the host on port 8080
+      - "8080:80"
     depends_on:
       - backend
     networks:
       - app-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   backend:
     build:
-      context: /tmp/myapp/hsfuldablog/backend  
+      context: /tmp/myapp/hsfuldablog/backend
       # Adjusted path since we're in hsfuldablog directory
-    ports:
-      - "5001:5001"  # Expose backend on port 5000 for debugging
+      # Expose backend on port 5000 for debugging
     environment:
       - NODE_ENV=production
-      - MONGO_URI=mongodb://admin:fbftuKPSZwNfv4a2@18.196.48.210:27017,3.67.190.44:27017/messageboard?replicaSet=atlas-wgs067-shard-0&authSource=admin&ssl=true
+      - MONGO_URI=mongodb+srv://admin:fbftuKPSZwNfv4a2@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&ssl=true
     restart: unless-stopped
-    networks:
-      - app-network
+    network_mode: "host"
 
 networks:
   app-network:

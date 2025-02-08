@@ -199,6 +199,10 @@ resource "openstack_compute_instance_v2" "docker_instances" {
       - cd /tmp/myapp
       - git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git .
 
+    # 1) Replace REPLACE_LB_FIP in scripts.js with the actual floating IP
+      
+      - sed -i "s/REPLACE_LB_FIP/${openstack_networking_floatingip_v2.lb_floating_ip.address}/g" /tmp/myapp/hsfuldablog/frontend/scripts.js
+
       # Run Docker Compose
       - cd /tmp/myapp/hsfuldablog
       - docker-compose down --remove-orphans || true
