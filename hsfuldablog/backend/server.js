@@ -12,10 +12,10 @@ app.use(express.json());
 
 let db, postsCollection;
 
-// ✅ Fix: Improved MongoDB Connection Settings
+// Fix: Improved MongoDB Connection Settings
 MongoClient.connect(MONGO_URI, {
   tls: true,
-  tlsAllowInvalidCertificates: true, // ✅ Keep only this
+  tlsAllowInvalidCertificates: true,
   connectTimeoutMS: 10000,
   socketTimeoutMS: 45000,
   serverSelectionTimeoutMS: 10000,
@@ -25,14 +25,14 @@ MongoClient.connect(MONGO_URI, {
   .then((client) => {
     db = client.db("messageboard");
     postsCollection = db.collection("posts");
-    console.log("✅ Connected to MongoDB");
+    console.log(" Connected to MongoDB");
   })
   .catch((err) => {
     console.error("❌ Failed to connect to MongoDB:", err);
     process.exit(1);
   });
 
-// ✅ Get all posts
+// Get all posts
 app.get("/posts", async (req, res) => {
   try {
     const posts = await postsCollection.find().toArray();
@@ -42,7 +42,7 @@ app.get("/posts", async (req, res) => {
   }
 });
 
-// ✅ Create a new post
+// Create a new post
 app.post("/posts", async (req, res) => {
   const { user, content } = req.body;
   if (!user || !content) {
@@ -61,12 +61,12 @@ app.post("/posts", async (req, res) => {
   }
 });
 
-// ✅ 404 Handler
+// 404 Handler
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" });
 });
 
-// ✅ Start the server
+// Start the server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
