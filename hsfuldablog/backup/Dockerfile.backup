@@ -1,18 +1,20 @@
-# Dockerfile.backup
+# Use MongoDB official image
 FROM mongo:latest
 
-# Install cron
-RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+WORKDIR /usr/src/app
 
-# Create a directory to store backups
-RUN mkdir -p /backup
+# Create backup directory
+WORKDIR /backup
 
-# Copy the backup script into the container
-COPY backup.sh /usr/local/bin/backup.sh
+# Copy the backup script and make it executable
+COPY backup.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/backup.sh
 
-# Set up a cron job to run the backup script every 15 minutes
+# Set up cron job for backup every 15 minutes
 RUN echo "*/15 * * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
 
-# Run cron in the foreground
-CMD ["cron", "-f"]
+# Expose MongoDB port (optional, if needed)
+EXPOSE 27017
+
+# Start cron in foreground
+CMD ["cron", "-f"]
