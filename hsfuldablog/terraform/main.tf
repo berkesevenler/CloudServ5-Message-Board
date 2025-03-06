@@ -367,42 +367,43 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       - mkdir -p /opt/monitoring/grafana/dashboards
 
       # Create docker-compose.yml
-      - cat > /opt/monitoring/docker-compose.yml <<EOF
-        version: '3.8'
-        
-        services:
-          prometheus:
-            image: prom/prometheus:latest
-            container_name: prometheus
-            ports:
-              - "9090:9090"
-            volumes:
-              - ./prometheus:/etc/prometheus
-              - prometheus_data:/prometheus
-            command:
-              - '--config.file=/etc/prometheus/prometheus.yml'
-              - '--storage.tsdb.path=/prometheus'
-            restart: unless-stopped
-        
-          grafana:
-            image: grafana/grafana:latest
-            container_name: grafana
-            ports:
-              - "3000:3000"
-            volumes:
-              - ./grafana:/etc/grafana
-              - grafana_data:/var/lib/grafana
-            environment:
-              - GF_SECURITY_ADMIN_USER=admin
-              - GF_SECURITY_ADMIN_PASSWORD=admin
-            depends_on:
-              - prometheus
-            restart: unless-stopped
-        
-        volumes:
-          prometheus_data:
-          grafana_data:
-        EOF
+      - |
+        cat > /opt/monitoring/docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana:/etc/grafana
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+EOF
 
       # Create Prometheus config
       - cat > /opt/monitoring/prometheus/prometheus.yml <<EOF
