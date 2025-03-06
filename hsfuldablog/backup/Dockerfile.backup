@@ -1,0 +1,18 @@
+# Dockerfile.backup
+FROM mongo:latest
+
+# Install cron
+RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+
+# Create a directory to store backups
+RUN mkdir -p /backup
+
+# Copy the backup script into the container
+COPY backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+# Set up a cron job to run the backup script every 15 minutes
+RUN echo "*/15 * * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
+
+# Run cron in the foreground
+CMD ["cron", "-f"]

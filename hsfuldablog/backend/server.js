@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const { MongoClient } = require("mongodb");
@@ -12,7 +13,7 @@ app.use(express.json());
 
 let db, postsCollection;
 
-// Fix: Improved MongoDB Connection Settings
+// Improved MongoDB Connection Settings
 MongoClient.connect(MONGO_URI, {
   tls: true,
   tlsAllowInvalidCertificates: true,
@@ -25,7 +26,7 @@ MongoClient.connect(MONGO_URI, {
   .then((client) => {
     db = client.db("messageboard");
     postsCollection = db.collection("posts");
-    console.log(" Connected to MongoDB");
+    console.log("Connected to MongoDB");
   })
   .catch((err) => {
     console.error("❌ Failed to connect to MongoDB:", err);

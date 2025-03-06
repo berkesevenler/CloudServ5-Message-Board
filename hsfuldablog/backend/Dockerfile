@@ -1,3 +1,4 @@
+# Dockerfile
 # Use Node.js official image
 FROM node:18
 
@@ -6,6 +7,7 @@ WORKDIR /usr/src/app
 # Copy package.json first for caching layers
 COPY package.json ./
 
+# Install cors (this is separate, as per your file)
 RUN npm install cors
 
 # Install dependencies (this will create a package-lock.json inside the container)

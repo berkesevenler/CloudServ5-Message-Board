@@ -4,8 +4,6 @@ services:
   frontend:
     build:
       context: /tmp/myapp/hsfuldablog/frontend
-      # Adjusted path since we're in hsfuldablog directory
-      # Expose the frontend to the host on port 8080
     ports:
       - "8080:80"
     depends_on:
@@ -18,14 +16,27 @@ services:
   backend:
     build:
       context: /tmp/myapp/hsfuldablog/backend
-      # Adjusted path since we're in hsfuldablog directory
-      # Expose backend on port 5000 for debugging
     environment:
       - NODE_ENV=production
       - MONGO_URI=mongodb+srv://admin:fbftuKPSZwNfv4a2@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&ssl=true
     restart: unless-stopped
     network_mode: "host"
 
+  backup:
+    build:
+      context: /tmp/myapp/hsfuldablog/backend
+      dockerfile: Dockerfile.backup
+    environment:
+      - MONGO_URI=mongodb+srv://admin:fbftuKPSZwNfv4a2@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&ssl=true
+    volumes:
+      - backup_data:/backup
+    restart: unless-stopped
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  backup_data:
