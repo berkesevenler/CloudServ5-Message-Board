@@ -31,8 +31,7 @@ services:
     volumes:
       - backup_data:/backup
     restart: unless-stopped
-    networks:
-      - app-network
+    network_mode: "host"
 
 networks:
   app-network:
