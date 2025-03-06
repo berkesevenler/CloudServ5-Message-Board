@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { MongoClient } = require('mongodb');
-const { exec } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 // Get MongoDB URI from environment variable
@@ -15,9 +15,19 @@ cron.schedule('*/15 * * * *', async () => {
     console.log(`Starting backup at ${timestamp}`);
     
     try {
-        // Connect to MongoDB
-        const client = await MongoClient.connect(MONGO_URI);
-        const db = client.db();
+        // Connect to MongoDB with the same options as backend
+        const client = await MongoClient.connect(MONGO_URI, {
+            tls: true,
+            tlsAllowInvalidCertificates: true,
+            connectTimeoutMS: 10000,
+            socketTimeoutMS: 45000,
+            serverSelectionTimeoutMS: 10000,
+            retryWrites: true,
+            w: "majority"
+        });
+
+        const db = client.db("messageboard");
+        console.log("Connected to MongoDB messageboard database");
         
         // Get all collections
         const collections = await db.listCollections().toArray();
@@ -27,10 +37,11 @@ cron.schedule('*/15 * * * *', async () => {
             const data = await db.collection(collection.name).find({}).toArray();
             
             // Save to backup directory
-            require('fs').writeFileSync(
+            fs.writeFileSync(
                 `${backupPath}-${collection.name}.json`,
                 JSON.stringify(data, null, 2)
             );
+            console.log(`Backed up collection: ${collection.name}`);
         }
         
         await client.close();
