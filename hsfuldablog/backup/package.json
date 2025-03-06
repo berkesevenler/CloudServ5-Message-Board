@@ -1,0 +1,9 @@
+{
+  "name": "mongodb-backup-service",
+  "version": "1.0.0",
+  "main": "backup.js",
+  "dependencies": {
+    "node-cron": "^3.0.0",
+    "mongodb": "^5.0.1"
+  }
+}

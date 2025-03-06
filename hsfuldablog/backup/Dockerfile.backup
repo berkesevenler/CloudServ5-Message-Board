@@ -1,20 +1,19 @@
-# Use MongoDB official image
-FROM mongo:latest
+# Use Node.js official image (like your backend)
+FROM node:18
 
 WORKDIR /usr/src/app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the backup script
+COPY backup.js .
 
 # Create backup directory
 WORKDIR /backup
 
-# Copy the backup script and make it executable
-COPY backup.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/backup.sh
-
-# Set up cron job for backup every 15 minutes
-RUN echo "*/15 * * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
-
-# Expose MongoDB port (optional, if needed)
-EXPOSE 27017
-
-# Start cron in foreground
-CMD ["cron", "-f"]
+# Start the backup script
+CMD ["node", "backup.js"]
