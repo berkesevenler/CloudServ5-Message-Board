@@ -140,6 +140,25 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_dns" {
   remote_ip_prefix = "0.0.0.0/0"
 }
 
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 3000
+  port_range_max    = 3000
+  remote_ip_prefix  = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus" {
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 9090
+  port_range_max    = 9090
+  remote_ip_prefix  = "0.0.0.0/0"
+}
 
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
@@ -276,9 +295,9 @@ resource "openstack_lb_pool_v2" "pool_backend_5001" {
 resource "openstack_lb_member_v2" "member_backend_5001" {
   count         = 2
   pool_id       = openstack_lb_pool_v2.pool_backend_5001.id
-  # Use the VM’s private IP for address
+  # Use the VM's private IP for address
   address       = openstack_compute_instance_v2.docker_instances[count.index].network.0.fixed_ip_v4
-  protocol_port = 5001  # The container’s published host port for backend
+  protocol_port = 5001  # The container's published host port for backend
 }
 
 resource "openstack_lb_monitor_v2" "monitor_1" {
@@ -303,4 +322,127 @@ output "loadbalancer_floating_ip" {
 output "private_ips" {
   description = "Private IPs of the Docker instances"
   value       = [for instance in openstack_compute_instance_v2.docker_instances : instance.access_ip_v4]
+}
+
+resource "openstack_compute_instance_v2" "monitoring_instance" {
+  name              = "monitoring-instance"
+  image_name        = local.image_name
+  flavor_name       = local.flavor_name
+  key_pair          = data.openstack_compute_keypair_v2.terraform_keypair.name
+  security_groups   = [openstack_networking_secgroup_v2.terraform_secgroup.name]
+
+  network {
+    uuid = openstack_networking_network_v2.terraform_network.id
+  }
+
+  user_data = <<-EOT
+    #cloud-config
+    package_update: true
+    package_upgrade: true
+
+    packages:
+      - docker.io
+      - docker-compose
+
+    runcmd:
+      # Enable and start Docker
+      - systemctl enable docker
+      - systemctl start docker
+      
+      # Create monitoring directory structure
+      - mkdir -p /opt/monitoring/prometheus
+      - mkdir -p /opt/monitoring/grafana/provisioning/datasources
+      - mkdir -p /opt/monitoring/grafana/provisioning/dashboards
+      - mkdir -p /opt/monitoring/grafana/dashboards
+
+      # Create docker-compose.yml
+      - cat > /opt/monitoring/docker-compose.yml <<EOF
+        version: '3.8'
+        
+        services:
+          prometheus:
+            image: prom/prometheus:latest
+            container_name: prometheus
+            ports:
+              - "9090:9090"
+            volumes:
+              - ./prometheus:/etc/prometheus
+              - prometheus_data:/prometheus
+            command:
+              - '--config.file=/etc/prometheus/prometheus.yml'
+              - '--storage.tsdb.path=/prometheus'
+            restart: unless-stopped
+        
+          grafana:
+            image: grafana/grafana:latest
+            container_name: grafana
+            ports:
+              - "3000:3000"
+            volumes:
+              - ./grafana:/etc/grafana
+              - grafana_data:/var/lib/grafana
+            environment:
+              - GF_SECURITY_ADMIN_USER=admin
+              - GF_SECURITY_ADMIN_PASSWORD=admin
+            depends_on:
+              - prometheus
+            restart: unless-stopped
+        
+        volumes:
+          prometheus_data:
+          grafana_data:
+        EOF
+
+      # Create Prometheus config
+      - cat > /opt/monitoring/prometheus/prometheus.yml <<EOF
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        
+        scrape_configs:
+          - job_name: 'prometheus'
+            static_configs:
+              - targets: ['localhost:9090']
+          
+          - job_name: 'docker'
+            static_configs:
+              - targets: ['${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:8080', '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:8080', '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:8080']
+        EOF
+
+      # Create Grafana datasource
+      - cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml <<EOF
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:9090
+            isDefault: true
+        EOF
+
+      # Start monitoring stack
+      - cd /opt/monitoring
+      - docker-compose up -d
+
+    final_message: "Monitoring setup completed"
+  EOT
+}
+
+# Create floating IP for monitoring instance
+resource "openstack_networking_floatingip_v2" "monitoring_floating_ip" {
+  pool = local.pubnet_name
+}
+
+# Associate floating IP with monitoring instance
+resource "openstack_compute_floatingip_associate_v2" "monitoring_ip_association" {
+  floating_ip = openstack_networking_floatingip_v2.monitoring_floating_ip.address
+  instance_id = openstack_compute_instance_v2.monitoring_instance.id
+}
+
+# Output monitoring URLs
+output "monitoring_urls" {
+  value = {
+    grafana    = "http://${openstack_networking_floatingip_v2.monitoring_floating_ip.address}:3000"
+    prometheus = "http://${openstack_networking_floatingip_v2.monitoring_floating_ip.address}:9090"
+  }
 }
