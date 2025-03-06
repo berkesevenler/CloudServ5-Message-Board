@@ -140,25 +140,44 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_dns" {
   remote_ip_prefix = "0.0.0.0/0"
 }
 
+# Security group rules for monitoring
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana" {
-  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 3000
-  port_range_max    = 3000
-  remote_ip_prefix  = "0.0.0.0/0"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 3000
+  port_range_max   = 3000
+  remote_ip_prefix = "0.0.0.0/0"
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus" {
-  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
   direction         = "ingress"
-  ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 9090
-  port_range_max    = 9090
-  remote_ip_prefix  = "0.0.0.0/0"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9090
+  port_range_max   = 9090
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_node_exporter" {
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9100
+  port_range_max   = 9100
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_cadvisor" {
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 8080
+  port_range_max   = 8080
+  remote_ip_prefix = "0.0.0.0/0"
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
