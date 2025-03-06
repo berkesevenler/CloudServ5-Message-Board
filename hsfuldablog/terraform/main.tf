@@ -148,6 +148,7 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana" {
   port_range_min    = 3000
   port_range_max    = 3000
   remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus" {
@@ -158,6 +159,7 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus" {
   port_range_min    = 9090
   port_range_max    = 9090
   remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
 resource "openstack_networking_network_v2" "terraform_network" {
@@ -341,14 +343,23 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
     package_upgrade: true
 
     packages:
-      - docker.io
-      - docker-compose
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - git
 
     runcmd:
-      # Enable and start Docker
+      # Install Docker
+      - curl -fsSL https://get.docker.com -o get-docker.sh
+      - sh get-docker.sh
       - systemctl enable docker
       - systemctl start docker
-      
+
+      # Install Docker Compose
+      - curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+      - chmod +x /usr/local/bin/docker-compose
+
       # Create monitoring directory structure
       - mkdir -p /opt/monitoring/prometheus
       - mkdir -p /opt/monitoring/grafana/provisioning/datasources
