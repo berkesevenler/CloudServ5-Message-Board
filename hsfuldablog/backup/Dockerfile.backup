@@ -1,6 +1,7 @@
 # Use Node.js official image (like your backend)
 FROM node:18
 
+# Set working directory
 WORKDIR /usr/src/app
 
 # Copy package files
@@ -13,7 +14,7 @@ RUN npm install
 COPY backup.js .
 
 # Create backup directory
-WORKDIR /backup
+RUN mkdir -p /backup
 
-# Start the backup script
-CMD ["node", "backup.js"]
+# Start the backup script from the correct directory
+CMD ["node", "/usr/src/app/backup.js"]
