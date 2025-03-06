@@ -24,7 +24,7 @@ services:
 
   backup:
     build:
-      context: /tmp/myapp/hsfuldablog/backend
+      context: /tmp/myapp/hsfuldablog/backup
       dockerfile: Dockerfile.backup
     environment:
       - MONGO_URI=mongodb+srv://admin:fbftuKPSZwNfv4a2@messageboard-database.mjot3.mongodb.net/messageboard?retryWrites=true&ssl=true
