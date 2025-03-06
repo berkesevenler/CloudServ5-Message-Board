@@ -181,6 +181,28 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_cadvisor" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
+# Outbound rule for Grafana (port 3000)
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 3000
+  port_range_max   = 3000
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+# Outbound rule for Prometheus (port 9090)
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9090
+  port_range_max   = 9090
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
   admin_state_up = true
