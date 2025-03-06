@@ -434,9 +434,9 @@ resource "openstack_networking_floatingip_v2" "monitoring_floating_ip" {
 }
 
 # Associate floating IP with monitoring instance
-resource "openstack_compute_floatingip_associate_v2" "monitoring_ip_association" {
+resource "openstack_networking_floatingip_associate_v2" "monitoring_ip_association" {
   floating_ip = openstack_networking_floatingip_v2.monitoring_floating_ip.address
-  instance_id = openstack_compute_instance_v2.monitoring_instance.id
+  port_id    = openstack_compute_instance_v2.monitoring_instance.network[0].port
 }
 
 # Output monitoring URLs
