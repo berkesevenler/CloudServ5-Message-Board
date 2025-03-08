@@ -388,18 +388,14 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       - ca-certificates
       - curl
       - software-properties-common
+      - docker.io
+      - docker-compose
       - git
 
     runcmd:
-      # Install Docker
-      - curl -fsSL https://get.docker.com -o get-docker.sh
-      - sh get-docker.sh
+      # Enable and start Docker
       - systemctl enable docker
       - systemctl start docker
-
-      # Install Docker Compose
-      - curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-      - chmod +x /usr/local/bin/docker-compose
 
       # Create monitoring directory structure
       - mkdir -p /opt/monitoring/prometheus
