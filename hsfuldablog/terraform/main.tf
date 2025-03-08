@@ -421,22 +421,78 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       - ca-certificates
       - curl
       - software-properties-common
-      - docker.io
-      - docker-compose
-      - git
+      - gnupg
+      - lsb-release
 
     runcmd:
+      # Remove any old Docker installations
+      - echo "Removing old Docker installations..." >> /var/log/docker-install.log
+      - apt-get remove -y docker docker-engine docker.io containerd runc || true
+      
+      # Install prerequisites
+      - echo "Installing prerequisites..." >> /var/log/docker-install.log
+      - apt-get update
+      - apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+      
+      # Add Docker's official GPG key
+      - echo "Adding Docker GPG key..." >> /var/log/docker-install.log
+      - mkdir -p /etc/apt/keyrings
+      - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      
+      # Add Docker repository
+      - echo "Adding Docker repository..." >> /var/log/docker-install.log
+      - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      
+      # Update apt and install Docker
+      - echo "Updating apt and installing Docker..." >> /var/log/docker-install.log
+      - chmod a+r /etc/apt/keyrings/docker.gpg
+      - apt-get update
+      - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      
+      # Add current user to docker group
+      - usermod -aG docker ubuntu
+      
+      # Install Docker Compose v2
+      - echo "Installing Docker Compose..." >> /var/log/docker-install.log
+      - mkdir -p /usr/local/lib/docker/cli-plugins
+      - curl -SL "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-$(uname -m)" -o /usr/local/bin/docker-compose
+      - chmod +x /usr/local/bin/docker-compose
+      
       # Enable and start Docker
+      - echo "Enabling and starting Docker..." >> /var/log/docker-install.log
       - systemctl enable docker
       - systemctl start docker
+      
+      # Verify installations
+      - echo "Verifying installations..." >> /var/log/docker-install.log
+      - docker --version >> /var/log/docker-install.log 2>&1
+      - docker-compose --version >> /var/log/docker-install.log 2>&1
+      - systemctl status docker >> /var/log/docker-install.log 2>&1
 
-      # Debugging - Log Docker status before setup
-      - echo "Initial Docker status:" >> /var/log/docker-status.log
-      - systemctl status docker >> /var/log/docker-status.log
-      - docker --version >> /var/log/docker-status.log
-      - docker-compose --version >> /var/log/docker-status.log
+      # Create Docker daemon configuration
+      - echo "Configuring Docker daemon..." >> /var/log/docker-install.log
+      - mkdir -p /etc/docker
+      - cat > /etc/docker/daemon.json <<DOCKERCONFIG
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m",
+          "max-file": "3"
+        }
+      }
+DOCKERCONFIG
+      
+      # Restart Docker to apply configuration
+      - echo "Restarting Docker..." >> /var/log/docker-install.log
+      - systemctl restart docker
+      - sleep 20  # Increased wait time for Docker to fully start
 
-      # Clone and setup monitoring
+      # Test Docker
+      - echo "Testing Docker..." >> /var/log/docker-install.log
+      - docker run --rm hello-world >> /var/log/docker-install.log 2>&1 || echo "Docker test failed" >> /var/log/docker-install.log
+
+      # Setup monitoring (rest of the configuration)
+      - echo "Setting up monitoring..." >> /var/log/docker-install.log
       - mkdir -p /opt/monitoring
       - cd /opt/monitoring
 
@@ -482,6 +538,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -505,7 +562,7 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     ports:
-      - "8081:8081"
+      - "8081:8080"  # Map container's 8080 to host's 8081
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -522,27 +579,35 @@ EOF
 
       # Create Prometheus config
       - cat > /opt/monitoring/prometheus/prometheus.yml <<EOF
-        global:
-          scrape_interval: 15s
-          evaluation_interval: 15s
-        
-        scrape_configs:
-          - job_name: 'prometheus'
-            static_configs:
-              - targets: ['localhost:9090']
-          
-          - job_name: 'node-exporter'
-            static_configs:
-              - targets: ['node-exporter:9100']
-          
-          - job_name: 'cadvisor'
-            static_configs:
-              - targets: ['cadvisor:8081']
-          
-          - job_name: 'docker'
-            static_configs:
-              - targets: ['${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:8080', '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:8080', '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:8080']
-        EOF
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: 
+          - 'node-exporter:9100'
+          - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:9100'
+          - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:9100'
+          - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:9100'
+  
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+  
+  - job_name: 'application'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: 
+          - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:8080'
+          - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:8080'
+          - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:8080'
+EOF
 
       # Create Grafana datasource
       - cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml <<EOF
@@ -556,29 +621,17 @@ EOF
         EOF
 
       # Start monitoring stack
+      - echo "Starting monitoring stack..." >> /var/log/docker-install.log
       - cd /opt/monitoring
       - docker-compose down --remove-orphans || true
       - docker-compose pull
       - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
 
-      # Debugging - Log final status
-      - echo "Final Docker containers status:" >> /var/log/docker-status.log
-      - docker ps -a >> /var/log/docker-status.log
-      - echo "Docker Compose logs:" >> /var/log/docker-status.log
-      - docker-compose logs >> /var/log/docker-status.log
-
-    write_files:
-      - path: /etc/docker/daemon.json
-        content: |
-          {
-            "log-driver": "json-file",
-            "log-opts": {
-              "max-size": "100m",
-              "max-file": "3"
-            }
-          }
-        owner: root:root
-        permissions: '0644'
+      # Log final status
+      - echo "Final Docker containers status:" >> /var/log/docker-install.log
+      - docker ps -a >> /var/log/docker-install.log
+      - echo "Docker Compose logs:" >> /var/log/docker-install.log
+      - docker-compose logs >> /var/log/docker-install.log
 
     final_message: "Monitoring setup completed after $UPTIME seconds"
   EOT
