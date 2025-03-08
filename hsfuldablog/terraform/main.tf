@@ -181,7 +181,7 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_cadvisor" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
-# Outbound rule for Grafana (port 3000)
+# Outbound rules for monitoring services
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana_egress" {
   direction         = "egress"
   ethertype        = "IPv4"
@@ -192,13 +192,66 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_grafana_egress" 
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
-# Outbound rule for Prometheus (port 9090)
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus_egress" {
   direction         = "egress"
   ethertype        = "IPv4"
   protocol         = "tcp"
   port_range_min   = 9090
   port_range_max   = 9090
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+# Add missing egress rules for Node Exporter and cAdvisor
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_node_exporter_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9100
+  port_range_max   = 9100
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_cadvisor_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 8081
+  port_range_max   = 8081
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+# Allow internal communication between containers
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_internal_tcp" {
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 1
+  port_range_max   = 65535
+  remote_ip_prefix = "192.168.255.0/24"  # Your subnet CIDR
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+# Allow HTTPS egress for pulling Docker images
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_https_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 443
+  port_range_max   = 443
+  remote_ip_prefix = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+}
+
+# Allow HTTP egress for pulling Docker images and other HTTP traffic
+resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_http_egress" {
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 80
+  port_range_max   = 80
   remote_ip_prefix = "0.0.0.0/0"
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
@@ -397,11 +450,21 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       - systemctl enable docker
       - systemctl start docker
 
+      # Debugging - Log Docker status before setup
+      - echo "Initial Docker status:" >> /var/log/docker-status.log
+      - systemctl status docker >> /var/log/docker-status.log
+      - docker --version >> /var/log/docker-status.log
+      - docker-compose --version >> /var/log/docker-status.log
+
+      # Clone and setup monitoring
+      - mkdir -p /opt/monitoring
+      - cd /opt/monitoring
+
       # Create monitoring directory structure
-      - mkdir -p /opt/monitoring/prometheus
-      - mkdir -p /opt/monitoring/grafana/provisioning/datasources
-      - mkdir -p /opt/monitoring/grafana/provisioning/dashboards
-      - mkdir -p /opt/monitoring/grafana/dashboards
+      - mkdir -p prometheus
+      - mkdir -p grafana/provisioning/datasources
+      - mkdir -p grafana/provisioning/dashboards
+      - mkdir -p grafana/dashboards
 
       # Create docker-compose.yml
       - |
@@ -420,7 +483,12 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
     restart: unless-stopped
+    depends_on:
+      - cadvisor
+      - node-exporter
 
   grafana:
     image: grafana/grafana:latest
@@ -428,14 +496,44 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana:/etc/grafana
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
     restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8081:8081"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+    privileged: true
 
 volumes:
   prometheus_data:
@@ -452,6 +550,14 @@ EOF
           - job_name: 'prometheus'
             static_configs:
               - targets: ['localhost:9090']
+          
+          - job_name: 'node-exporter'
+            static_configs:
+              - targets: ['node-exporter:9100']
+          
+          - job_name: 'cadvisor'
+            static_configs:
+              - targets: ['cadvisor:8081']
           
           - job_name: 'docker'
             static_configs:
@@ -471,9 +577,30 @@ EOF
 
       # Start monitoring stack
       - cd /opt/monitoring
-      - docker-compose up -d
+      - docker-compose down --remove-orphans || true
+      - docker-compose pull
+      - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
 
-    final_message: "Monitoring setup completed"
+      # Debugging - Log final status
+      - echo "Final Docker containers status:" >> /var/log/docker-status.log
+      - docker ps -a >> /var/log/docker-status.log
+      - echo "Docker Compose logs:" >> /var/log/docker-status.log
+      - docker-compose logs >> /var/log/docker-status.log
+
+    write_files:
+      - path: /etc/docker/daemon.json
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "100m",
+              "max-file": "3"
+            }
+          }
+        owner: root:root
+        permissions: '0644'
+
+    final_message: "Monitoring setup completed after $UPTIME seconds"
   EOT
 }
 
