@@ -234,27 +234,7 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_internal_tcp" {
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
 }
 
-# Allow HTTPS egress for pulling Docker images
-resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_https_egress" {
-  direction         = "egress"
-  ethertype        = "IPv4"
-  protocol         = "tcp"
-  port_range_min   = 443
-  port_range_max   = 443
-  remote_ip_prefix = "0.0.0.0/0"
-  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
-}
-
-# Allow HTTP egress for pulling Docker images and other HTTP traffic
-resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_http_egress" {
-  direction         = "egress"
-  ethertype        = "IPv4"
-  protocol         = "tcp"
-  port_range_min   = 80
-  port_range_max   = 80
-  remote_ip_prefix = "0.0.0.0/0"
-  security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
-}
+# Note: HTTP and HTTPS egress rules are already defined above as secgroup_rule_outbound and secgroup_rule_outbound_https
 
 resource "openstack_networking_network_v2" "terraform_network" {
   name           = "my-terraform-network-1"
