@@ -400,17 +400,114 @@ output "private_ips" {
   value       = [for instance in openstack_compute_instance_v2.docker_instances : instance.access_ip_v4]
 }
 
+# Create a separate security group for monitoring instance
+resource "openstack_networking_secgroup_v2" "monitoring_secgroup" {
+  name        = "monitoring-secgroup"
+  description = "Security group for monitoring instance"
+}
+
+# Basic rules (SSH, HTTP, HTTPS outbound)
+resource "openstack_networking_secgroup_rule_v2" "monitoring_ssh" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 22
+  port_range_max   = 22
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "monitoring_https_outbound" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 443
+  port_range_max   = 443
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+# Allow all outbound traffic for Docker and monitoring
+resource "openstack_networking_secgroup_rule_v2" "monitoring_all_outbound" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "egress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 1
+  port_range_max   = 65535
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+# Monitoring specific ports (ingress)
+resource "openstack_networking_secgroup_rule_v2" "monitoring_grafana" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 3000
+  port_range_max   = 3000
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "monitoring_prometheus" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9090
+  port_range_max   = 9090
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "monitoring_node_exporter" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 9100
+  port_range_max   = 9100
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+resource "openstack_networking_secgroup_rule_v2" "monitoring_cadvisor" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 8081
+  port_range_max   = 8081
+  remote_ip_prefix = "0.0.0.0/0"
+}
+
+# Allow internal network communication
+resource "openstack_networking_secgroup_rule_v2" "monitoring_internal" {
+  security_group_id = openstack_networking_secgroup_v2.monitoring_secgroup.id
+  direction         = "ingress"
+  ethertype        = "IPv4"
+  protocol         = "tcp"
+  port_range_min   = 1
+  port_range_max   = 65535
+  remote_ip_prefix = "192.168.255.0/24"  # Your subnet CIDR
+}
+
+# Update the monitoring instance to use the new security group
 resource "openstack_compute_instance_v2" "monitoring_instance" {
   name              = "monitoring-instance"
   image_name        = local.image_name
   flavor_name       = local.flavor_name
   key_pair          = data.openstack_compute_keypair_v2.terraform_keypair.name
-  security_groups   = [openstack_networking_secgroup_v2.terraform_secgroup.name]
+  security_groups   = [openstack_networking_secgroup_v2.monitoring_secgroup.name]
 
   network {
     uuid = openstack_networking_network_v2.terraform_network.id
   }
 
+  # Add a metadata tag for easier identification
+  metadata = {
+    role = "monitoring"
+  }
+
+  # Update the user_data script to include error checking
   user_data = <<-EOT
     #cloud-config
     package_update: true
@@ -425,6 +522,11 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       - lsb-release
 
     runcmd:
+      # Check internet connectivity
+      - echo "Checking internet connectivity..." >> /var/log/docker-install.log
+      - ping -c 4 8.8.8.8 >> /var/log/docker-install.log 2>&1
+      - ping -c 4 download.docker.com >> /var/log/docker-install.log 2>&1
+
       # Remove any old Docker installations
       - echo "Removing old Docker installations..." >> /var/log/docker-install.log
       - apt-get remove -y docker docker-engine docker.io containerd runc || true
