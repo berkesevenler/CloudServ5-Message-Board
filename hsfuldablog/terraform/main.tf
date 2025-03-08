@@ -163,12 +163,13 @@ resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_prometheus" {
 
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_node_exporter" {
   direction         = "ingress"
-  ethertype        = "IPv4"
-  protocol         = "tcp"
-  port_range_min   = 9100
-  port_range_max   = 9100
-  remote_ip_prefix = "0.0.0.0/0"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 9100
+  port_range_max    = 9100
+  remote_ip_prefix  = "192.168.255.0/24"  # Your subnet CIDR
   security_group_id = openstack_networking_secgroup_v2.terraform_secgroup.id
+  description       = "Allow Node Exporter metrics scraping"
 }
 
 resource "openstack_networking_secgroup_rule_v2" "secgroup_rule_cadvisor" {
@@ -271,59 +272,111 @@ resource "openstack_compute_instance_v2" "docker_instances" {
   }
 
   user_data = <<-EOT
-    #cloud-config
-    package_update: true
-    package_upgrade: true
+#cloud-config
+write_files:
+  - path: /var/log/app-setup.log
+    content: "Starting application setup at $(date)\n"
+    permissions: '0644'
+  - path: /etc/systemd/system/node_exporter.service
+    content: |
+      [Unit]
+      Description=Node Exporter
+      After=network.target
 
-    packages:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - software-properties-common
-      - docker.io
-      - docker-compose
-      - git
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/usr/local/bin/node_exporter --collector.filesystem --collector.meminfo --collector.cpu --collector.diskstats
+      Restart=always
 
-    runcmd:
-      # Enable and start Docker
-      - systemctl enable docker
-      - systemctl start docker
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m",
+          "max-file": "3"
+        }
+      }
+    permissions: '0644'
+  - path: /usr/local/bin/setup-app.sh
+    content: |
+      #!/bin/bash
+      set -e
+      LOGFILE="/var/log/app-setup.log"
+      
+      # Record setup start
+      echo "Setup script starting execution at $(date)" >> $LOGFILE
+      
+      # Install Node Exporter for Prometheus metrics
+      echo "Installing Node Exporter..." >> $LOGFILE
+      mkdir -p /opt/node_exporter
+      cd /opt/node_exporter
+      curl -LO https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz >> $LOGFILE 2>&1 || { echo "Failed to download Node Exporter" >> $LOGFILE; exit 1; }
+      tar -xvf node_exporter-1.7.0.linux-amd64.tar.gz >> $LOGFILE 2>&1 || { echo "Failed to extract Node Exporter" >> $LOGFILE; exit 1; }
+      mv node_exporter-1.7.0.linux-amd64/node_exporter /usr/local/bin/ >> $LOGFILE 2>&1 || { echo "Failed to move Node Exporter binary" >> $LOGFILE; exit 1; }
+      rm -rf node_exporter-1.7.0.linux-amd64* >> $LOGFILE 2>&1
+
+      # Enable and start Node Exporter
+      echo "Enabling and starting Node Exporter..." >> $LOGFILE
+      systemctl daemon-reload >> $LOGFILE 2>&1 || { echo "Failed to reload systemd" >> $LOGFILE; exit 1; }
+      systemctl enable node_exporter >> $LOGFILE 2>&1 || { echo "Failed to enable Node Exporter" >> $LOGFILE; exit 1; }
+      systemctl start node_exporter >> $LOGFILE 2>&1 || { echo "Failed to start Node Exporter" >> $LOGFILE; exit 1; }
+      
+      # Configure firewall for metrics
+      echo "Configuring firewall rules..." >> $LOGFILE
+      ufw allow 8080/tcp >> $LOGFILE 2>&1 || echo "Warning: Failed to allow port 8080" >> $LOGFILE
+      ufw allow 9100/tcp >> $LOGFILE 2>&1 || echo "Warning: Failed to allow port 9100" >> $LOGFILE
 
       # Clone and setup application
-      - mkdir -p /tmp/myapp
-      - cd /tmp/myapp
-      - git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git .
-
-    # 1) Replace REPLACE_LB_FIP in scripts.js with the actual floating IP
+      echo "Cloning application repository..." >> $LOGFILE
+      mkdir -p /tmp/myapp
+      cd /tmp/myapp
+      git clone https://github.com/berkesevenler/CloudServ5-Message-Board.git . >> $LOGFILE 2>&1 || { echo "Failed to clone application repository" >> $LOGFILE; exit 1; }
       
-      - sed -i "s/REPLACE_LB_FIP/${openstack_networking_floatingip_v2.lb_floating_ip.address}/g" /tmp/myapp/hsfuldablog/frontend/scripts.js
+      sed -i "s/REPLACE_LB_FIP/${openstack_networking_floatingip_v2.lb_floating_ip.address}/g" /tmp/myapp/hsfuldablog/frontend/scripts.js
 
       # Run Docker Compose
-      - cd /tmp/myapp/hsfuldablog
-      - docker-compose down --remove-orphans || true
-      - docker-compose pull
-      - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
+      echo "Starting application with Docker Compose..." >> $LOGFILE
+      cd /tmp/myapp/hsfuldablog
+      docker-compose down --remove-orphans >> $LOGFILE 2>&1 || true
+      docker-compose pull >> $LOGFILE 2>&1 || { echo "Failed to pull Docker images" >> $LOGFILE; exit 1; }
+      COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d >> $LOGFILE 2>&1 || { echo "Failed to start Docker Compose" >> $LOGFILE; exit 1; }
 
-      # Debugging - Log Docker status
-      - echo "Docker containers status:" >> /var/log/docker-status.log
-      - docker ps -a >> /var/log/docker-status.log
-      - echo "Docker Compose logs:" >> /var/log/docker-status.log
-      - docker-compose logs >> /var/log/docker-status.log
+      # Log Docker status
+      echo "Docker containers status:" >> $LOGFILE
+      docker ps -a >> $LOGFILE
+      echo "Docker Compose logs:" >> $LOGFILE
+      docker-compose logs >> $LOGFILE
 
-    write_files:
-      - path: /etc/docker/daemon.json
-        content: |
-          {
-            "log-driver": "json-file",
-            "log-opts": {
-              "max-size": "100m",
-              "max-file": "3"
-            }
-          }
-        owner: root:root
-        permissions: '0644'
+      echo "Application setup completed at $(date)" >> $LOGFILE
+    permissions: '0755'
 
-    final_message: "System configuration completed after $UPTIME seconds"
+# Install required packages
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose
+  - curl
+  - apt-transport-https
+  - ca-certificates
+  - git
+  - software-properties-common
+  - ufw
+
+# Run commands after package installation
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - mkdir -p /etc/docker
+  - chmod +x /usr/local/bin/setup-app.sh
+  - /usr/local/bin/setup-app.sh
+  - systemctl restart docker
+  - systemctl status node_exporter
   EOT
 }
 
@@ -509,234 +562,768 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
 
   # Update the user_data script to include error checking
   user_data = <<-EOT
-    #cloud-config
-    package_update: true
-    package_upgrade: true
+    #!/bin/bash
+    
+    # Log file for installation progress
+    LOGFILE="/var/log/monitoring-setup.log"
+    
+    echo "Starting monitoring setup at $(date)" > $LOGFILE
+    
+    # Update and install required packages
+    echo "Updating package lists..." >> $LOGFILE
+    apt-get update >> $LOGFILE 2>&1
+    
+    echo "Installing required packages..." >> $LOGFILE
+    apt-get install -y \
+      apt-transport-https \
+      ca-certificates \
+      curl \
+      software-properties-common \
+      gnupg \
+      lsb-release \
+      docker.io \
+      docker-compose >> $LOGFILE 2>&1
+    
+    # Add current user to docker group
+    usermod -aG docker ubuntu
+    
+    # Create monitoring directory structure
+    echo "Creating directory structure..." >> $LOGFILE
+    mkdir -p /opt/monitoring/prometheus
+    mkdir -p /opt/monitoring/grafana/provisioning/datasources
+    mkdir -p /opt/monitoring/grafana/provisioning/dashboards
+    mkdir -p /opt/monitoring/grafana/dashboards
+    
+    # Create docker-compose.yml
+    echo "Creating docker-compose.yml..." >> $LOGFILE
+    cat > /opt/monitoring/docker-compose.yml << 'EOF'
+    version: '3.8'
 
-    packages:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - software-properties-common
-      - gnupg
-      - lsb-release
+    services:
+      prometheus:
+        image: prom/prometheus:latest
+        container_name: prometheus
+        ports:
+          - "9090:9090"
+        volumes:
+          - ./prometheus:/etc/prometheus
+          - prometheus_data:/prometheus
+        command:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+          - '--web.console.templates=/usr/share/prometheus/consoles'
+        restart: unless-stopped
+        depends_on:
+          - cadvisor
+          - node-exporter
 
-    runcmd:
-      # Check internet connectivity
-      - echo "Checking internet connectivity..." >> /var/log/docker-install.log
-      - ping -c 4 8.8.8.8 >> /var/log/docker-install.log 2>&1
-      - ping -c 4 download.docker.com >> /var/log/docker-install.log 2>&1
+      grafana:
+        image: grafana/grafana:latest
+        container_name: grafana
+        ports:
+          - "3000:3000"
+        volumes:
+          - grafana_data:/var/lib/grafana
+          - ./grafana/provisioning:/etc/grafana/provisioning
+          - ./grafana/dashboards:/var/lib/grafana/dashboards
+        environment:
+          - GF_SECURITY_ADMIN_USER=admin
+          - GF_SECURITY_ADMIN_PASSWORD=admin
+          - GF_INSTALL_PLUGINS=
+        depends_on:
+          - prometheus
+        restart: unless-stopped
 
-      # Remove any old Docker installations
-      - echo "Removing old Docker installations..." >> /var/log/docker-install.log
-      - apt-get remove -y docker docker-engine docker.io containerd runc || true
-      
-      # Install prerequisites
-      - echo "Installing prerequisites..." >> /var/log/docker-install.log
-      - apt-get update
-      - apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-      
-      # Add Docker's official GPG key
-      - echo "Adding Docker GPG key..." >> /var/log/docker-install.log
-      - mkdir -p /etc/apt/keyrings
-      - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      
-      # Add Docker repository
-      - echo "Adding Docker repository..." >> /var/log/docker-install.log
-      - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-      
-      # Update apt and install Docker
-      - echo "Updating apt and installing Docker..." >> /var/log/docker-install.log
-      - chmod a+r /etc/apt/keyrings/docker.gpg
-      - apt-get update
-      - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      
-      # Add current user to docker group
-      - usermod -aG docker ubuntu
-      
-      # Install Docker Compose v2
-      - echo "Installing Docker Compose..." >> /var/log/docker-install.log
-      - mkdir -p /usr/local/lib/docker/cli-plugins
-      - curl -SL "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-$(uname -m)" -o /usr/local/bin/docker-compose
-      - chmod +x /usr/local/bin/docker-compose
-      
-      # Enable and start Docker
-      - echo "Enabling and starting Docker..." >> /var/log/docker-install.log
-      - systemctl enable docker
-      - systemctl start docker
-      
-      # Verify installations
-      - echo "Verifying installations..." >> /var/log/docker-install.log
-      - docker --version >> /var/log/docker-install.log 2>&1
-      - docker-compose --version >> /var/log/docker-install.log 2>&1
-      - systemctl status docker >> /var/log/docker-install.log 2>&1
+      node-exporter:
+        image: prom/node-exporter:latest
+        container_name: node-exporter
+        ports:
+          - "9100:9100"
+        volumes:
+          - /proc:/host/proc:ro
+          - /sys:/host/sys:ro
+          - /:/rootfs:ro
+        command:
+          - '--path.procfs=/host/proc'
+          - '--path.sysfs=/host/sys'
+          - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+        restart: unless-stopped
 
-      # Create Docker daemon configuration
-      - echo "Configuring Docker daemon..." >> /var/log/docker-install.log
-      - mkdir -p /etc/docker
-      - |
-        cat > /etc/docker/daemon.json << 'DOCKERCONFIG'
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "100m",
-    "max-file": "3"
-  }
-}
-DOCKERCONFIG
-      
-      # Restart Docker to apply configuration
-      - echo "Restarting Docker..." >> /var/log/docker-install.log
-      - systemctl restart docker
-      - sleep 20  # Increased wait time for Docker to fully start
+      cadvisor:
+        image: gcr.io/cadvisor/cadvisor:latest
+        container_name: cadvisor
+        ports:
+          - "8081:8080"  # Map container's 8080 to host's 8081
+        volumes:
+          - /:/rootfs:ro
+          - /var/run:/var/run:ro
+          - /sys:/sys:ro
+          - /var/lib/docker/:/var/lib/docker:ro
+          - /dev/disk/:/dev/disk:ro
+        restart: unless-stopped
+        privileged: true
 
-      # Test Docker
-      - echo "Testing Docker..." >> /var/log/docker-install.log
-      - docker run --rm hello-world >> /var/log/docker-install.log 2>&1 || echo "Docker test failed" >> /var/log/docker-install.log
-
-      # Setup monitoring (rest of the configuration)
-      - echo "Setting up monitoring..." >> /var/log/docker-install.log
-      - mkdir -p /opt/monitoring
-      - cd /opt/monitoring
-
-      # Create monitoring directory structure
-      - mkdir -p prometheus
-      - mkdir -p grafana/provisioning/datasources
-      - mkdir -p grafana/provisioning/dashboards
-      - mkdir -p grafana/dashboards
-
-      # Create docker-compose.yml
-      - |
-        cat > /opt/monitoring/docker-compose.yml << 'EOF'
-version: '3.8'
-
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
     volumes:
-      - ./prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    restart: unless-stopped
-    depends_on:
-      - cadvisor
-      - node-exporter
+      prometheus_data:
+      grafana_data:
+    EOF
+    
+    # Create Prometheus config
+    echo "Creating Prometheus configuration..." >> $LOGFILE
+    cat > /opt/monitoring/prometheus/prometheus.yml << EOF
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    restart: unless-stopped
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: cadvisor
-    ports:
-      - "8081:8080"  # Map container's 8080 to host's 8081
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    restart: unless-stopped
-    privileged: true
-
-volumes:
-  prometheus_data:
-  grafana_data:
-EOF
-
-      # Create Prometheus config
-      - cat > /opt/monitoring/prometheus/prometheus.yml <<EOF
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-  
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: 
-          - 'node-exporter:9100'
-          - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:9100'
-          - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:9100'
-          - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:9100'
-  
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-  
-  - job_name: 'application'
-    metrics_path: '/metrics'
-    static_configs:
-      - targets: 
-          - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:8080'
-          - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:8080'
-          - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:8080'
-EOF
-
-      # Create Grafana datasource
-      - cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml <<EOF
-apiVersion: 1
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-EOF
-
-      # Start monitoring stack
-      - echo "Starting monitoring stack..." >> /var/log/docker-install.log
-      - cd /opt/monitoring
-      - docker-compose down --remove-orphans || true
-      - docker-compose pull
-      - COMPOSE_HTTP_TIMEOUT=200 docker-compose up -d
-
-      # Log final status
-      - echo "Final Docker containers status:" >> /var/log/docker-install.log
-      - docker ps -a >> /var/log/docker-install.log
-      - echo "Docker Compose logs:" >> /var/log/docker-install.log
-      - docker-compose logs >> /var/log/docker-install.log
-
-    final_message: "Monitoring setup completed after $UPTIME seconds"
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+      
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: 
+              - 'node-exporter:9100'
+              - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:9100'
+              - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:9100'
+              - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:9100'
+      
+      - job_name: 'cadvisor'
+        static_configs:
+          - targets: ['cadvisor:8080']
+      
+      - job_name: 'application'
+        metrics_path: '/metrics'
+        static_configs:
+          - targets: 
+              - '${openstack_compute_instance_v2.docker_instances[0].access_ip_v4}:8080'
+              - '${openstack_compute_instance_v2.docker_instances[1].access_ip_v4}:8080'
+              - '${openstack_compute_instance_v2.docker_instances[2].access_ip_v4}:8080'
+    EOF
+    
+    # Create Grafana datasource
+    echo "Creating Grafana datasource..." >> $LOGFILE
+    cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml << EOF
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+    EOF
+    
+    # Create Grafana dashboard provisioning config
+    echo "Creating Grafana dashboard provisioning config..." >> $LOGFILE
+    cat > /opt/monitoring/grafana/provisioning/dashboards/default.yml << EOF
+    apiVersion: 1
+    providers:
+      - name: 'Default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+    EOF
+    
+    # Create System Metrics Dashboard
+    echo "Creating Grafana dashboard for system metrics..." >> $LOGFILE
+    cat > /opt/monitoring/grafana/dashboards/system_metrics.json << 'EOF'
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 12,
+          "panels": [],
+          "title": "CPU Usage",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 1
+          },
+          "id": 1,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
+              "legendFormat": "{{instance}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Usage by Instance",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 9
+          },
+          "id": 13,
+          "panels": [],
+          "title": "Memory Usage",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 10
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "100 * (1 - ((node_memory_MemFree_bytes + node_memory_Cached_bytes + node_memory_Buffers_bytes) / node_memory_MemTotal_bytes))",
+              "legendFormat": "{{instance}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Usage by Instance",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 18
+          },
+          "id": 14,
+          "panels": [],
+          "title": "Disk Usage",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 19
+          },
+          "id": 3,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"rootfs\"} * 100) / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"rootfs\"})",
+              "legendFormat": "{{instance}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Usage by Instance",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 27
+          },
+          "id": 15,
+          "panels": [],
+          "title": "Disk I/O",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 28
+          },
+          "id": 4,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "rate(node_disk_read_bytes_total[1m])",
+              "legendFormat": "{{instance}} - {{device}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Read Throughput",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 28
+          },
+          "id": 5,
+          "options": {
+            "legend": {
+              "calcs": [
+                "mean",
+                "max"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PBFA97CFB590B2093"
+              },
+              "editorMode": "code",
+              "expr": "rate(node_disk_written_bytes_total[1m])",
+              "legendFormat": "{{instance}} - {{device}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Write Throughput",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": [],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "System Metrics Dashboard",
+      "uid": "system-metrics",
+      "version": 1,
+      "weekStart": ""
+    }
+    EOF
+    
+    # Start monitoring stack
+    echo "Starting monitoring stack..." >> $LOGFILE
+    cd /opt/monitoring
+    docker-compose down --remove-orphans || true
+    docker-compose pull
+    docker-compose up -d
+    
+    # Log final status
+    echo "Final Docker containers status:" >> $LOGFILE
+    docker ps -a >> $LOGFILE
+    echo "Docker Compose logs:" >> $LOGFILE
+    docker-compose logs >> $LOGFILE
+    
+    echo "Monitoring setup completed at $(date)" >> $LOGFILE
   EOT
 }
 
