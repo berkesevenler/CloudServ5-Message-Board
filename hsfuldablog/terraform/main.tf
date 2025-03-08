@@ -714,14 +714,14 @@ EOF
 
       # Create Grafana datasource
       - cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml <<EOF
-        apiVersion: 1
-        datasources:
-          - name: Prometheus
-            type: prometheus
-            access: proxy
-            url: http://prometheus:9090
-            isDefault: true
-        EOF
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+EOF
 
       # Start monitoring stack
       - echo "Starting monitoring stack..." >> /var/log/docker-install.log
