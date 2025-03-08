@@ -574,14 +574,15 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
       # Create Docker daemon configuration
       - echo "Configuring Docker daemon..." >> /var/log/docker-install.log
       - mkdir -p /etc/docker
-      - cat > /etc/docker/daemon.json <<DOCKERCONFIG
-      {
-        "log-driver": "json-file",
-        "log-opts": {
-          "max-size": "100m",
-          "max-file": "3"
-        }
-      }
+      - |
+        cat > /etc/docker/daemon.json << 'DOCKERCONFIG'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
+}
 DOCKERCONFIG
       
       # Restart Docker to apply configuration
