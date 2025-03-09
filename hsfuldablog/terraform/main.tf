@@ -544,6 +544,18 @@ resource "openstack_networking_secgroup_rule_v2" "monitoring_internal" {
   remote_ip_prefix = "192.168.255.0/24"  # Your subnet CIDR
 }
 
+# Create a dedicated port for the monitoring instance
+resource "openstack_networking_port_v2" "monitoring_port" {
+  name               = "monitoring-port"
+  network_id         = openstack_networking_network_v2.terraform_network.id
+  security_group_ids = [openstack_networking_secgroup_v2.monitoring_secgroup.id]
+  admin_state_up     = true
+
+  fixed_ip {
+    subnet_id = openstack_networking_subnet_v2.terraform_subnet.id
+  }
+}
+
 # Update the monitoring instance to use the new security group
 resource "openstack_compute_instance_v2" "monitoring_instance" {
   name              = "monitoring-instance"
@@ -553,7 +565,7 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
   security_groups   = [openstack_networking_secgroup_v2.monitoring_secgroup.name]
 
   network {
-    uuid = openstack_networking_network_v2.terraform_network.id
+    port = openstack_networking_port_v2.monitoring_port.id
   }
 
   # Add a metadata tag for easier identification
@@ -1330,13 +1342,8 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
 
 # Create floating IP for monitoring instance
 resource "openstack_networking_floatingip_v2" "monitoring_floating_ip" {
-  pool = local.pubnet_name
-}
-
-# Associate floating IP with monitoring instance
-resource "openstack_networking_floatingip_associate_v2" "monitoring_ip_association" {
-  floating_ip = openstack_networking_floatingip_v2.monitoring_floating_ip.address
-  port_id    = openstack_compute_instance_v2.monitoring_instance.network[0].port
+  pool    = local.pubnet_name
+  port_id = openstack_networking_port_v2.monitoring_port.id
 }
 
 # Output monitoring URLs
@@ -1345,4 +1352,10 @@ output "monitoring_urls" {
     grafana    = "http://${openstack_networking_floatingip_v2.monitoring_floating_ip.address}:3000"
     prometheus = "http://${openstack_networking_floatingip_v2.monitoring_floating_ip.address}:9090"
   }
+}
+
+# Output application URL
+output "application_url" {
+  description = "URL to access the application"
+  value       = "http://${openstack_networking_floatingip_v2.lb_floating_ip.address}:8080"
 }
