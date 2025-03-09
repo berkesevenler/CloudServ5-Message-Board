@@ -377,6 +377,7 @@ runcmd:
   - /usr/local/bin/setup-app.sh
   - systemctl restart docker
   - systemctl status node_exporter
+  - echo "#!/bin/bash" > /usr/local/bin/restart-frontend.sh && echo "cd /tmp/myapp/hsfuldablog && docker-compose restart frontend && docker exec -i hsfuldablog_frontend_1 sed -i \"s|http://[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+:5001|http://${openstack_networking_floatingip_v2.lb_floating_ip.address}:5001|g\" /app/scripts.js" >> /usr/local/bin/restart-frontend.sh && chmod +x /usr/local/bin/restart-frontend.sh && /usr/local/bin/restart-frontend.sh && echo "Frontend container restarted and configured with load balancer IP ${openstack_networking_floatingip_v2.lb_floating_ip.address}" >> /var/log/app-setup.log
   EOT
 }
 
