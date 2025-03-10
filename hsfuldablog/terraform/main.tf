@@ -302,6 +302,34 @@ write_files:
         }
       }
     permissions: '0644'
+  - path: /etc/systemd/system/log-shipper.service
+    content: |
+      [Unit]
+      Description=Docker Log Shipper
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart=/bin/bash -c 'while true; do docker logs --tail 100 $(docker ps -q) 2>&1 | nc MONITORING_IP 1514; sleep 10; done'
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+  - path: /usr/local/bin/update-log-shipper.sh
+    content: |
+      #!/bin/bash
+      MONITORING_IP=$(dig +short ${openstack_networking_floatingip_v2.monitoring_floating_ip.address})
+      if [ -z "$MONITORING_IP" ]; then
+        MONITORING_IP=${openstack_networking_floatingip_v2.monitoring_floating_ip.address}
+      fi
+      sed -i "s/MONITORING_IP/$MONITORING_IP/g" /etc/systemd/system/log-shipper.service
+      systemctl daemon-reload
+      systemctl enable log-shipper.service
+      systemctl restart log-shipper.service
+    permissions: '0755'
   - path: /usr/local/bin/setup-app.sh
     content: |
       #!/bin/bash
@@ -367,17 +395,25 @@ packages:
   - git
   - software-properties-common
   - ufw
+  - netcat-openbsd
+  - dnsutils
 
 # Run commands after package installation
 runcmd:
   - systemctl enable docker
   - systemctl start docker
+  - systemctl daemon-reload
+  - chmod +x /usr/local/bin/update-log-shipper.sh
+  - /usr/local/bin/update-log-shipper.sh
   - mkdir -p /etc/docker
   - chmod +x /usr/local/bin/setup-app.sh
   - /usr/local/bin/setup-app.sh
   - systemctl restart docker
   - systemctl status node_exporter
   - echo "#!/bin/bash" > /usr/local/bin/restart-frontend.sh && echo "cd /tmp/myapp/hsfuldablog && docker-compose restart frontend && docker exec -i hsfuldablog_frontend_1 sed -i \"s|http://[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+:5001|http://${openstack_networking_floatingip_v2.lb_floating_ip.address}:5001|g\" /app/scripts.js" >> /usr/local/bin/restart-frontend.sh && chmod +x /usr/local/bin/restart-frontend.sh && /usr/local/bin/restart-frontend.sh && echo "Frontend container restarted and configured with load balancer IP ${openstack_networking_floatingip_v2.lb_floating_ip.address}" >> /var/log/app-setup.log
+  - systemctl daemon-reload
+  - systemctl enable log-shipper.service
+  - systemctl start log-shipper.service
   EOT
 }
 
@@ -640,6 +676,7 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
           - grafana_data:/var/lib/grafana
           - ./grafana/provisioning:/etc/grafana/provisioning
           - ./grafana/dashboards:/var/lib/grafana/dashboards
+          - ./logs:/var/lib/grafana/logs
         environment:
           - GF_SECURITY_ADMIN_USER=admin
           - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -676,6 +713,16 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
           - /dev/disk/:/dev/disk:ro
         restart: unless-stopped
         privileged: true
+        
+      log-collector:
+        image: alpine:latest
+        container_name: log-collector
+        restart: unless-stopped
+        volumes:
+          - ./logs:/logs
+        command: sh -c "mkdir -p /logs && apk add --no-cache netcat-openbsd && while true; do nc -l -p 1514 >> /logs/docker-instances.log; done"
+        ports:
+          - "1514:1514"
 
     volumes:
       prometheus_data:
@@ -1323,6 +1370,124 @@ resource "openstack_compute_instance_v2" "monitoring_instance" {
     }
     EOF
     
+    # Create a Logs Dashboard
+    echo "Creating Grafana dashboard for logs..." >> $LOGFILE
+    cat > /opt/monitoring/grafana/dashboards/logs_dashboard.json << 'EOF'
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "code": {
+              "language": "plaintext",
+              "showLineNumbers": false,
+              "showMiniMap": false
+            },
+            "content": "## Docker Instances Logs\nThis dashboard displays the logs collected from all Docker instances.",
+            "mode": "markdown"
+          },
+          "pluginVersion": "10.0.0",
+          "type": "text"
+        },
+        {
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "description": "Logs from Docker instances",
+          "gridPos": {
+            "h": 15,
+            "w": 24,
+            "x": 0,
+            "y": 3
+          },
+          "id": 2,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "grafana",
+                "uid": "-- Grafana --"
+              },
+              "queryType": "file",
+              "refId": "A",
+              "file": {
+                "path": "/var/lib/grafana/logs/docker-instances.log"
+              }
+            }
+          ],
+          "title": "Docker Instances Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": [],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "Docker Instances Logs",
+      "uid": "docker-logs",
+      "version": 1,
+      "weekStart": ""
+    }
+    EOF
+
+    # Create directory for logs
+    mkdir -p /opt/monitoring/logs
+    
+    # Allow netcat to bind to port 1514
+    echo "Configuring firewall for logs..." >> $LOGFILE
+    ufw allow 1514/tcp >> $LOGFILE 2>&1 || echo "Warning: Failed to allow port 1514" >> $LOGFILE
+
     # Start monitoring stack
     echo "Starting monitoring stack..." >> $LOGFILE
     cd /opt/monitoring
